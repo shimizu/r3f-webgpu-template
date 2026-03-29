@@ -2,8 +2,10 @@
 import { Html, OrbitControls } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
 import { useRef, useState } from 'react'
+import { MOUSE } from 'three'
 
 import BaseMapLayer from './layers/BaseMapLayer'
+import MovingEntitiesLayer from './layers/MovingEntitiesLayer'
 
 const WORLD_VIEW = {
   centerLon: 0,
@@ -51,13 +53,19 @@ function Scene({ entityCount }) {
       <OrbitControls
         enableDamping
         maxPolarAngle={Math.PI * 0.495}
-        minDistance={6}
+        minDistance={0.5}
         maxDistance={120}
         target={[0, 0, 0]}
+        mouseButtons={{
+          LEFT: MOUSE.PAN,
+          MIDDLE: MOUSE.DOLLY,
+          RIGHT: MOUSE.ROTATE,
+        }}
       />
 
       <PerformanceHud entityCount={entityCount} />
       <BaseMapLayer url='/data/world.geojson' view={WORLD_VIEW} />
+      <MovingEntitiesLayer key={entityCount} entityCount={entityCount} view={WORLD_VIEW} />
     </>
   )
 }

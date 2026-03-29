@@ -48,10 +48,6 @@ export function createProjectionPass(rawObservationBuffer, options = {}) {
     const lat = rawObservationNode
       .element(baseIndex.add(int(OBSERVATION_OFFSET.lat)))
       .toVar()
-    const alt = rawObservationNode
-      .element(baseIndex.add(int(OBSERVATION_OFFSET.alt)))
-      .toVar()
-
     const lambda = lon.sub(centerLonNode).mul(DEG2RAD).toVar()
     const phi = lat.sub(centerLatNode).mul(DEG2RAD).toVar()
     const wrappedPositive = select(
@@ -67,8 +63,8 @@ export function createProjectionPass(rawObservationBuffer, options = {}) {
 
     // 初期段階は局所 equirectangular で十分。
     const worldX = wrappedLambda.mul(cosCenterLatNode).mul(worldScaleNode)
-    const worldY = alt.mul(altitudeScaleNode)
-    const worldZ = phi.mul(worldScaleNode)
+    const worldY = phi.mul(worldScaleNode)
+    const worldZ = float(0)
 
     projectedPosition.assign(vec3(worldX, worldY, worldZ))
   })().compute(entityCount, [WORKGROUP_SIZE])

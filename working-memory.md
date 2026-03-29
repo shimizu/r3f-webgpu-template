@@ -98,7 +98,10 @@ GPU 実装で最初に使う候補:
 - `public/data/japan.geojson` を追加し、日本地図の単独表示でベースマップ確認を進めている
 - `public/data/world.geojson` も追加され、現在は world 表示デバッグに切り替えている
 - `src/gis/projection.js` で軸を入れ替え、現在は `x = 東西`, `y = 南北`, `z = 重なり回避` の扱い
+- `src/compute/createProjectionPass.js` も軸を揃え、現在は `x = 東西`, `y = 南北`, `z = 0` でパーティクルを平面へ置いている
 - `japan.geojson` は points/lines として正しく表示できる状態になった
+- `MovingEntitiesLayer` は world view に合わせて再表示済み
+- camera の `near/far` と `OrbitControls.minDistance` を緩め、近距離ズームしやすくした
 - `reference/observation-buffer.md` に buffer layout メモを追加した
 - 現時点では Projection Pass のみで、補間、トレイル、風場、LOD はまだ未実装
 - `plan.md` は GPU First 方針に更新済み
@@ -106,7 +109,7 @@ GPU 実装で最初に使う候補:
 - `.codex` に SessionStart / Stop フックを追加済み
 - SessionStart で `working-memory.md` を developer context に注入する
 - Stop で `working-memory.md` の整合確認を促す継続フックを入れた
-- 現在は移動体を非表示にして、`world.geojson` の表示確認を進めている
+- 現在は `world.geojson` とパーティクルを同時表示して位置関係を確認している
 
 ## 次に着手するべき作業
 
@@ -122,8 +125,7 @@ GPU 実装で最初に使う候補:
 
 1. `world.geojson` を適切な投影と scale で安定表示する
 2. GeoJSON と移動体で共有する projection kernel に寄せる
-3. それから移動体表示を戻す
-4. Interpolation Pass に進む
+3. Interpolation Pass に進む
 
 ## 実装の最初の完成ライン
 

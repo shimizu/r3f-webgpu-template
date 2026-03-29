@@ -23,14 +23,14 @@ function getEntityColor(rawObservationBuffer, index) {
     : new Color('#66d9ff')
 }
 
-function MovingEntitiesLayer({ entityCount }) {
+function MovingEntitiesLayer({ entityCount, view }) {
   const renderer = useThree((state) => state.gl)
   const systemRef = useRef(null)
   const dataset = useMemo(() => createMockObservationBuffer(entityCount), [entityCount])
 
   const { resourceError, resources } = useMemo(() => {
     try {
-      const system = createProjectionPass(dataset.rawObservationBuffer, dataset.view)
+      const system = createProjectionPass(dataset.rawObservationBuffer, view)
       const geometry = new PlaneGeometry(ENTITY_SIZE, ENTITY_SIZE, 1, 1)
       const material = new MeshBasicNodeMaterial({
         color: '#ffffff',
@@ -68,7 +68,7 @@ function MovingEntitiesLayer({ entityCount }) {
         resources: null,
       }
     }
-  }, [dataset])
+  }, [dataset, view])
 
   useEffect(() => {
     if (!resources) {
