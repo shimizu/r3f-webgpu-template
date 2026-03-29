@@ -86,9 +86,13 @@ GPU 実装で最初に使う候補:
 
 ## いまの実装状態
 
-- 既存実装は正方グリッド上のランダムウォーク粒子
-- WebGPU compute の最小基盤はある
-- GIS 向けの投影、移動体、トレイル、ベクトル場、LOD は未実装
+- 既存のランダムウォーク中心 Scene は、最小 GIS Scene へ置き換えた
+- `src/compute/createProjectionPass.js` を追加し、GPU で `lon/lat/alt -> world position` を投影できる
+- `src/compute/observationLayout.js` で `rawObservationBuffer` の stride と offsets を固定した
+- `src/data/mockObservations.js` で東京湾周辺のダミー観測データを生成できる
+- `src/layers/MovingEntitiesLayer.jsx` を追加し、投影済み state を billboard instancing で描画している
+- `reference/observation-buffer.md` に buffer layout メモを追加した
+- 現時点では Projection Pass のみで、補間、トレイル、風場、LOD はまだ未実装
 - `plan.md` は GPU First 方針に更新済み
 - `task.md` は実装タスク分解済み
 - `.codex` に SessionStart / Stop フックを追加済み
@@ -99,11 +103,11 @@ GPU 実装で最初に使う候補:
 
 優先順:
 
-1. `src/compute/runBarsCompute.js` の責務分離方針を決める
-2. `rawObservationBuffer` のレイアウトを決める
-3. `src/compute/createProjectionPass.js` を作る
-4. `src/layers/MovingEntitiesLayer.jsx` の最小描画を作る
-5. 10 万件のダミー移動体を表示する
+1. `src/compute/createInterpolationPass.js` を作り、`prev*` と `timestamp` を GPU 補間へつなぐ
+2. `src/layers/MovingEntitiesLayer.jsx` を projected state と interpolation state の二段構成へ広げる
+3. `src/compute/runBarsCompute.js` は役割縮小または退役方針を決める
+4. `src/layers/BaseMapLayer.jsx` を追加して背景地図を最小導入する
+5. `Trail Update Pass` の設計に入る
 
 ## 実装の最初の完成ライン
 
@@ -120,4 +124,6 @@ GPU 実装で最初に使う候補:
 - `reference/projection.md` は未コミットの可能性があるので、次回再開時に Git 状態を確認する
 - フックを有効にするため、Codex 側で repo-local `.codex/config.toml` が読まれる前提
 - Stop hook は 1 回だけ継続をかけ、そのターンの終了前確認を促す実装
-- 次回は説明ではなく、P0 タスクから着手する
+- `npm run build` は通過済み
+- `npm run lint` は通過済み
+- 次回は Projection Pass の次段として Interpolation Pass に着手する
