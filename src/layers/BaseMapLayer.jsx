@@ -31,20 +31,16 @@ function collectCoordinates(geometry, collector) {
   }
 }
 
-function isWithinViewport([lon, lat], view) {
-  return (
-    Math.abs(lon - view.centerLon) <= view.extentLon &&
-    Math.abs(lat - view.centerLat) <= view.extentLat
-  )
-}
-
 function appendSampledSegment(linePositions, pointPositions, previous, current, view) {
   const lonDelta = current[0] - previous[0]
   const latDelta = current[1] - previous[1]
   const steps = Math.max(
     1,
     Math.ceil(
-      Math.max(Math.abs(lonDelta) / view.sampleLonStep, Math.abs(latDelta) / view.sampleLatStep)
+      Math.max(
+        Math.abs(lonDelta) / (view.sampleLonStep ?? 0.2),
+        Math.abs(latDelta) / (view.sampleLatStep ?? 0.2)
+      )
     )
   )
   const sampledPoints = []
@@ -53,11 +49,7 @@ function appendSampledSegment(linePositions, pointPositions, previous, current, 
     const t = step / steps
     const lon = previous[0] + lonDelta * t
     const lat = previous[1] + latDelta * t
-    const sampledPoint = [lon, lat]
-
-    if (isWithinViewport(sampledPoint, view)) {
-      sampledPoints.push(projectLonLatToWorld(sampledPoint, view))
-    }
+    sampledPoints.push(projectLonLatToWorld([lon, lat], view))
   }
 
   for (let index = 1; index < sampledPoints.length; index += 1) {
@@ -149,12 +141,12 @@ function BaseMapLayer({ url, view }) {
   }
 
   return (
-    <group position={[0, 0.025, 0]}>
+    <group position={[0, 0, 0.025]}>
       <lineSegments geometry={lineGeometry}>
-        <lineBasicMaterial color='#9fe7ff' transparent opacity={0.95} />
+        <lineBasicMaterial color='#6dcff6' transparent opacity={0.5} />
       </lineSegments>
       <points geometry={pointGeometry}>
-        <pointsMaterial color='#ffffff' size={0.08} sizeAttenuation />
+        <pointsMaterial color='#ffffff' size={0.12} sizeAttenuation />
       </points>
     </group>
   )

@@ -17,7 +17,7 @@ export function projectLonLatToWorld([lon, lat], view) {
   const lambda = wrapLongitudeRadians((lon - view.centerLon) * DEG2RAD)
   const phi = (lat - view.centerLat) * DEG2RAD
   const worldX = lambda * Math.cos(view.centerLat * DEG2RAD) * view.worldScale
-  const worldZ = phi * view.worldScale
+  const worldY = phi * view.worldScale
 
-  return [worldX, 0, worldZ]
+  return [worldX, worldY, 0]
 }

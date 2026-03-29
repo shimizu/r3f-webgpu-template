@@ -95,6 +95,9 @@ GPU 実装で最初に使う候補:
 - `src/layers/MovingEntitiesLayer.jsx` を追加し、投影済み state を billboard instancing で描画している
 - `src/layers/BaseMapLayer.jsx` を追加し、`public/data/world.geojson` の海岸線を背景ラインとして描画できる
 - `src/gis/projection.js` を追加し、CPU 側の静的 GeoJSON 投影にも同じ view 設定を使えるようにした
+- `public/data/japan.geojson` を追加し、日本地図の単独表示でベースマップ確認を進めている
+- `src/gis/projection.js` で軸を入れ替え、現在は `x = 東西`, `y = 南北`, `z = 重なり回避` の扱い
+- `japan.geojson` は points/lines として正しく表示できる状態になった
 - `reference/observation-buffer.md` に buffer layout メモを追加した
 - 現時点では Projection Pass のみで、補間、トレイル、風場、LOD はまだ未実装
 - `plan.md` は GPU First 方針に更新済み
@@ -102,6 +105,7 @@ GPU 実装で最初に使う候補:
 - `.codex` に SessionStart / Stop フックを追加済み
 - SessionStart で `working-memory.md` を developer context に注入する
 - Stop で `working-memory.md` の整合確認を促す継続フックを入れた
+- 現在は移動体を非表示にして、日本地図を points/lines で正しく表示できている
 
 ## 次に着手するべき作業
 
@@ -112,6 +116,12 @@ GPU 実装で最初に使う候補:
 3. `src/layers/MovingEntitiesLayer.jsx` を projected state と interpolation state の二段構成へ広げる
 4. `src/compute/runBarsCompute.js` は役割縮小または退役方針を決める
 5. `Trail Update Pass` の設計に入る
+
+直近のデバッグ優先順位:
+
+1. GeoJSON と移動体で共有する projection kernel に寄せる
+2. それから移動体表示を戻す
+3. Interpolation Pass に進む
 
 ## 実装の最初の完成ライン
 
@@ -130,4 +140,5 @@ GPU 実装で最初に使う候補:
 - Stop hook は 1 回だけ継続をかけ、そのターンの終了前確認を促す実装
 - `npm run build` は通過済み
 - `npm run lint` は通過済み
-- 次回は Projection Pass の次段として Interpolation Pass に着手する
+- `public/data/world.geojson` は未追跡のまま残っている
+- 次回は共通 projection kernel の整理か、Interpolation Pass の着手から再開する
