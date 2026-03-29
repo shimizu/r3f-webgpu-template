@@ -18,13 +18,6 @@ const TOKYO_BAY_VIEW = {
 
 export { TOKYO_BAY_VIEW }
 
-const TOKYO_BAY_BOUNDS = {
-  minLon: 139.68,
-  maxLon: 140.02,
-  minLat: 35.42,
-  maxLat: 35.68,
-}
-
 function hash01(value) {
   const x = Math.sin(value * 12.9898) * 43758.5453
   return x - Math.floor(x)
@@ -36,17 +29,14 @@ export function createMockObservationBuffer(entityCount) {
   for (let index = 0; index < entityCount; index += 1) {
     const baseIndex = index * OBSERVATION_STRIDE
     const isAircraft = index % 9 === 0
-    const lane = hash01(index * 0.17 + 2.1)
-    const progress = hash01(index * 0.37 + 7.9)
-    const drift = (hash01(index * 0.61 + 1.4) - 0.5) * 0.015
-    const lonSpan = TOKYO_BAY_BOUNDS.maxLon - TOKYO_BAY_BOUNDS.minLon
-    const latSpan = TOKYO_BAY_BOUNDS.maxLat - TOKYO_BAY_BOUNDS.minLat
-    const lonBase = TOKYO_BAY_BOUNDS.minLon + lonSpan * progress
-    const latBase = TOKYO_BAY_BOUNDS.minLat + latSpan * lane
-    const prevLon = lonBase - (isAircraft ? 0.014 : 0.005)
-    const prevLat = latBase + drift
-    const lon = lonBase + (isAircraft ? 0.006 : 0.002)
-    const lat = latBase + drift * 1.2
+    const lonBase = -180 + hash01(index * 0.37 + 7.9) * 360
+    const latBase = -90 + hash01(index * 0.17 + 2.1) * 180
+    const lonDelta = (hash01(index * 0.61 + 1.4) - 0.5) * (isAircraft ? 1.8 : 0.6)
+    const latDelta = (hash01(index * 0.49 + 9.2) - 0.5) * (isAircraft ? 0.9 : 0.3)
+    const prevLon = Math.max(-180, Math.min(180, lonBase - lonDelta))
+    const prevLat = Math.max(-90, Math.min(90, latBase - latDelta))
+    const lon = Math.max(-180, Math.min(180, lonBase + lonDelta))
+    const lat = Math.max(-90, Math.min(90, latBase + latDelta))
     const alt = isAircraft ? 2800 + hash01(index * 0.43 + 4.2) * 9000 : 0
     const prevAlt = isAircraft ? alt - 180 : 0
     const speed = isAircraft ? 210 + hash01(index * 0.83 + 4.7) * 90 : 9 + hash01(index * 0.71 + 5.4) * 14

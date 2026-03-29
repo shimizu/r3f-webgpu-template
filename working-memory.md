@@ -91,7 +91,7 @@ GPU 実装で最初に使う候補:
 - 既存のランダムウォーク中心 Scene は、最小 GIS Scene へ置き換えた
 - `src/compute/createProjectionPass.js` を追加し、GPU で `lon/lat/alt -> world position` を投影できる
 - `src/compute/observationLayout.js` で `rawObservationBuffer` の stride と offsets を固定した
-- `src/data/mockObservations.js` で東京湾周辺のダミー観測データを生成できる
+- `src/data/mockObservations.js` で `lon:-180..180`, `lat:-90..90` の全世界ランダム観測データを生成できる
 - `src/layers/MovingEntitiesLayer.jsx` を追加し、投影済み state を billboard instancing で描画している
 - `src/layers/BaseMapLayer.jsx` を追加し、`public/data/world.geojson` の海岸線を背景ラインとして描画できる
 - `src/gis/projection.js` を追加し、CPU 側の静的 GeoJSON 投影にも同じ view 設定を使えるようにした
