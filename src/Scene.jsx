@@ -1,91 +1,103 @@
-/*
-  このファイルの処理の流れを先に要約すると、次の順序になる。
-
-  1. `Scene` がライト、背景色、OrbitControls を含む R3F の scene を組み立てる
-  2. `BarsFromCompute` が mount され、`useEffect()` で WebGPU compute runner を初期化する
-  3. 初回だけ `runner.run(0)` を実行し、GPU で計算した棒の高さを最初の state に反映する
-  4. 以後は `useFrame()` が render loop ごとに走り、経過時間を使って compute を毎フレーム実行する
-  5. compute の返り値で `values` state を更新し、その値を box 群の高さと位置に変換して描画する
-
-  つまり役割分担としては、
-  `runBarsCompute.js` が「GPU で何を計算するか」を担当し、
-  この `Scene.jsx` が「いつ計算し、計算結果をどう scene に見せるか」を担当している。
-*/
-import { OrbitControls } from '@react-three/drei'
+/* eslint-disable react/prop-types */
+import { Html, OrbitControls } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { createBarsComputeRunner } from './compute/runBarsCompute'
 
-/*
-  このファイルは「WebGPU compute の結果を、React Three Fiber の scene に載せる」
-  ところを担当している。
+function createParticleSeed(gridSize, spacing) {
+  const particleCount = gridSize * gridSize
+  const positions = new Float32Array(particleCount * 3)
+  const half = (gridSize - 1) / 2
 
-  大きな流れは 3 段階ある。
+  for (let z = 0; z < gridSize; z += 1) {
+    for (let x = 0; x < gridSize; x += 1) {
+      const index = z * gridSize + x
+      const baseIndex = index * 3
 
-  1. `useEffect()` で compute runner を初期化する
-     - runner は `device` や `pipeline`、buffer 類を内部に持つ実行器
-     - ここで毎フレーム作り直すと高コストなので、最初に 1 回だけ作る
+      positions[baseIndex] = (x - half) * spacing
+      positions[baseIndex + 1] = 0
+      positions[baseIndex + 2] = (z - half) * spacing
+    }
+  }
 
-  2. `useFrame()` で毎フレーム `runner.run(time)` を呼ぶ
-     - R3F の render loop に合わせて compute を回す
-     - shader へ `time` を渡し、棒の高さを時間変化させる
+  return positions
+}
 
-  3. 返ってきた数値配列を `values` state に入れ、JSX の mesh 群へ反映する
-     - compute shader は「描画そのもの」ではなく「描画に使う元データ」を作っている
-     - React 側はその結果を普通の state として受け取って表示する
+function PerformanceHud({ particleCount }) {
+  const [fps, setFps] = useState(0)
+  const sampleRef = useRef({
+    frames: 0,
+    elapsed: 0,
+  })
 
-  つまりこのサンプルでは、
-  「GPU で計算 -> CPU に読み戻し -> React state 更新 -> R3F で描画」
-  という最小構成を学べるようにしている。
-*/
-const INPUT_VALUES = new Float32Array([1, 2, 3, 4, 5, 6, 7, 8])
+  useFrame((_, delta) => {
+    sampleRef.current.frames += 1
+    sampleRef.current.elapsed += delta
 
-function BarsFromCompute() {
-  // `values` は最終的に box の高さへ変換される配列。
-  // 初期表示では入力値をそのまま使い、最初の compute 完了後に結果へ差し替える。
-  const [values, setValues] = useState(() => Array.from(INPUT_VALUES))
+    if (sampleRef.current.elapsed >= 0.25) {
+      setFps(Math.round(sampleRef.current.frames / sampleRef.current.elapsed))
+      sampleRef.current.frames = 0
+      sampleRef.current.elapsed = 0
+    }
+  })
+
+  return (
+    <Html prepend>
+      <div className='stats-panel'>
+        <span>{particleCount.toLocaleString()} particles</span>
+        <span>{fps} FPS</span>
+      </div>
+    </Html>
+  )
+}
+
+function ParticlesFromCompute({ gridSize }) {
   const [error, setError] = useState(null)
-
-  // `runnerRef` は WebGPU compute 実行器への参照。
-  // state に入れると再 render を招くので、再描画に影響しない ref で保持する。
+  const geometryRef = useRef(null)
+  const positionAttributeRef = useRef(null)
   const runnerRef = useRef(null)
-
-  // `mapAsync()` で読み戻し中の buffer に対して、次の compute を重ねると壊れる。
-  // そのため「今 1 回走っている最中か」を ref で管理して多重実行を防ぐ。
   const inFlightRef = useRef(false)
-
-  // 非同期処理の完了時に、component がまだ生きているかを判定する。
-  // unmount 済みなのに `setState()` すると React 的に不正なので、その防止用。
   const mountedRef = useRef(false)
 
+  const { particleSeed, particleSize } = useMemo(() => {
+    const spacing = Math.max(0.045, 5 / gridSize)
+
+    return {
+      particleSeed: createParticleSeed(gridSize, spacing),
+      particleSize: Math.max(0.018, spacing * 0.38),
+    }
+  }, [gridSize])
+
   useEffect(() => {
-    // effect 内で閉じるフラグ。
-    // 初期化途中に unmount された場合でも安全に後始末できるようにする。
     let cancelled = false
     mountedRef.current = true
+
+    const positionAttribute = positionAttributeRef.current
+    positionAttribute.array = particleSeed.slice()
+    positionAttribute.count = particleSeed.length / 3
+    positionAttribute.needsUpdate = true
+    geometryRef.current.computeBoundingSphere()
 
     async function setupRunner() {
       let runner
 
       try {
-        // ここで adapter/device/pipeline/buffer をまとめて確保する。
-        // compute の土台づくりに相当する。
-        runner = await createBarsComputeRunner(INPUT_VALUES)
+        runner = await createBarsComputeRunner(particleSeed)
 
         if (cancelled) {
           runner.destroy()
           return
         }
 
-        // まず 1 回だけ time=0 で実行し、初期の見た目を GPU 計算結果で揃える。
-        // この完了前に `useFrame()` から runner を触らせないため、
-        // `runnerRef.current` への代入はこの await 後にしている。
-        const initialValues = await runner.run(0)
+        const initialPositions = await runner.run(0)
 
         if (!cancelled) {
           runnerRef.current = runner
-          setValues(initialValues)
+          positionAttribute.array = initialPositions
+          positionAttribute.count = initialPositions.length / 3
+          positionAttribute.needsUpdate = true
+          geometryRef.current.computeBoundingSphere()
         }
       } catch (computeError) {
         runner?.destroy()
@@ -100,24 +112,24 @@ function BarsFromCompute() {
       }
     }
 
+    runnerRef.current?.destroy()
+    runnerRef.current = null
+    inFlightRef.current = false
     setupRunner()
 
     return () => {
-      // component が消える時に、後続の非同期更新を止めて GPU resource を解放する。
       cancelled = true
       mountedRef.current = false
       runnerRef.current?.destroy()
       runnerRef.current = null
+      inFlightRef.current = false
     }
-  }, [])
+  }, [gridSize, particleSeed])
 
   useFrame((state) => {
-    // `state.clock.elapsedTime` は R3F が持つ経過時間。
-    // 今回はこれを shader 側へ渡して、sin 波による高さ変化を作っている。
     const runner = runnerRef.current
 
     if (!runner || inFlightRef.current) {
-      // まだ初期化前、または直前の compute の読み戻し中なら何もしない。
       return
     }
 
@@ -125,9 +137,13 @@ function BarsFromCompute() {
 
     runner
       .run(state.clock.elapsedTime)
-      .then((nextValues) => {
+      .then((nextPositions) => {
         if (mountedRef.current) {
-          setValues(nextValues)
+          const positionAttribute = positionAttributeRef.current
+          positionAttribute.array = nextPositions
+          positionAttribute.count = nextPositions.length / 3
+          positionAttribute.needsUpdate = true
+          geometryRef.current.computeBoundingSphere()
         }
       })
       .catch((computeError) => {
@@ -145,40 +161,37 @@ function BarsFromCompute() {
   })
 
   if (error) {
-    // このサンプルでは専用 UI は作らず、開発者が console で原因を追える形に留める。
     console.error(error)
     return null
   }
 
   return (
-    <group>
-      {/* `values` の各要素を 1 本の box に対応させる。
-          ここで重要なのは、compute 結果を特殊な描画 API ではなく、
-          いつもの JSX / props に落とし込める点。 */}
-      {values.map((value, index) => (
-        <mesh
-          key={index}
-          position={[index - (values.length - 1) / 2, value / 4, 0]}
-        >
-          <boxGeometry args={[0.6, value / 2, 0.6]} />
-          <meshNormalMaterial />
-        </mesh>
-      ))}
-    </group>
+    <points>
+      <bufferGeometry ref={geometryRef}>
+        <bufferAttribute
+          ref={positionAttributeRef}
+          attach='attributes-position'
+          args={[particleSeed, 3]}
+        />
+      </bufferGeometry>
+      <pointsMaterial color='#8fe3ff' size={particleSize} />
+    </points>
   )
 }
 
-function Scene() {
+function Scene({ gridSize }) {
+  const particleCount = gridSize * gridSize
+
   return (
     <>
-      {/* scene 全体の土台は普通の R3F / Three.js と同じ。
-          compute を使っていても、camera・light・controls の組み方は変わらない。 */}
-      <color attach='background' args={['black']} />
-      <ambientLight intensity={1.5} />
-      <directionalLight position={[3, 5, 4]} intensity={2} />
-      <OrbitControls />
-      {/* compute の結果を可視化する component を scene に載せる。 */}
-      <BarsFromCompute />
+      <color attach='background' args={['#04070d']} />
+      <fog attach='fog' args={['#04070d', 3.5, 8]} />
+      <ambientLight intensity={0.4} />
+      <directionalLight position={[3, 5, 4]} intensity={1.5} color='#b5d8ff' />
+      <gridHelper args={[8, 16, '#1b3a52', '#11202f']} position={[0, -0.35, 0]} />
+      <OrbitControls enableDamping />
+      <PerformanceHud particleCount={particleCount} />
+      <ParticlesFromCompute key={gridSize} gridSize={gridSize} />
     </>
   )
 }
