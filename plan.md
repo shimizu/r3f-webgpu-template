@@ -104,6 +104,36 @@
 
 重要なのは、投影法の正確さよりも、GPU 上で一貫して扱えること。
 
+### projection.md から流用できる考え方
+
+`reference/projection.md` は CPU 実装メモだが、投影式の分解は GPU 実装でもそのまま参考になる。忘れないように、以下を `Projection Pass` 設計時の前提として使う。
+
+- `degrees -> radians`
+- `rotate(lambda, phi)`
+- `projectRaw(lambda, phi) -> (u, v)`
+- `scale / translate / reflect`
+
+特に有用なのは、「投影固有の数式」と「後段の affine 変換」を分けている点。compute 設計でも以下のように分離しやすい。
+
+- Step 1: `lon/lat -> lambda/phi`
+- Step 2: `rotate`
+- Step 3: `raw projection`
+- Step 4: `world transform`
+
+そのまま使える候補:
+
+- `equirectangularRaw`
+- `mercatorRawSafe`
+- `rotateLambda`
+
+そのままは使わず読み替える箇所:
+
+- `toScreen`
+- `translateX`, `translateY`
+- `y = translateY - ry`
+
+これらは 2D 画面座標の都合なので、このプロジェクトでは pixel 空間ではなく Three.js の `worldX/worldZ` へ写像する形に置き換える。
+
 ## レイヤー構成
 
 ### 1. Base Map Layer
@@ -253,6 +283,12 @@ GPU でやる理由:
 出力:
 
 - `projectedStateBuffer`
+
+メモ:
+
+- 最初の実装は `reference/projection.md` の `degrees -> radians -> rotate -> raw projection` をそのまま GPU 化する
+- `toScreen` は使わず、`u/v` を scene 用の `worldX/worldZ` に変換する
+- Mercator を使う場合は `phi` clamp を必ず入れる
 
 ### Pass 2: Interpolation Pass
 
