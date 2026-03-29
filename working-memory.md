@@ -27,6 +27,7 @@
 - 船舶や航空機の移動補間も GPU で行う
 - トレイルは GPU リングバッファで持つ
 - 風や海流は compute ベースの flow particle として扱う
+- GeoJSON と移動体で投影ロジックを分けない
 
 ### 2. CPU へ逃がさない
 
@@ -47,6 +48,7 @@ CPU に残してよいもの:
 
 - 背景地図として使う
 - 主役は大量移動体、GPU 補間、GPU トレイル、風場粒子、GPU 集約
+- ただし投影式は背景地図と移動体で必ず共有する
 
 ## 参考ファイル
 
@@ -91,6 +93,8 @@ GPU 実装で最初に使う候補:
 - `src/compute/observationLayout.js` で `rawObservationBuffer` の stride と offsets を固定した
 - `src/data/mockObservations.js` で東京湾周辺のダミー観測データを生成できる
 - `src/layers/MovingEntitiesLayer.jsx` を追加し、投影済み state を billboard instancing で描画している
+- `src/layers/BaseMapLayer.jsx` を追加し、`public/data/world.geojson` の海岸線を背景ラインとして描画できる
+- `src/gis/projection.js` を追加し、CPU 側の静的 GeoJSON 投影にも同じ view 設定を使えるようにした
 - `reference/observation-buffer.md` に buffer layout メモを追加した
 - 現時点では Projection Pass のみで、補間、トレイル、風場、LOD はまだ未実装
 - `plan.md` は GPU First 方針に更新済み
@@ -103,10 +107,10 @@ GPU 実装で最初に使う候補:
 
 優先順:
 
-1. `src/compute/createInterpolationPass.js` を作り、`prev*` と `timestamp` を GPU 補間へつなぐ
-2. `src/layers/MovingEntitiesLayer.jsx` を projected state と interpolation state の二段構成へ広げる
-3. `src/compute/runBarsCompute.js` は役割縮小または退役方針を決める
-4. `src/layers/BaseMapLayer.jsx` を追加して背景地図を最小導入する
+1. GeoJSON と移動体で共有する projection kernel の形を決める
+2. `src/compute/createInterpolationPass.js` を作り、`prev*` と `timestamp` を GPU 補間へつなぐ
+3. `src/layers/MovingEntitiesLayer.jsx` を projected state と interpolation state の二段構成へ広げる
+4. `src/compute/runBarsCompute.js` は役割縮小または退役方針を決める
 5. `Trail Update Pass` の設計に入る
 
 ## 実装の最初の完成ライン

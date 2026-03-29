@@ -46,7 +46,7 @@ function App() {
       </div>
 
       <Canvas
-        camera={{ position: [0, 1.9, 2.8], fov: 42 }}
+        camera={{ position: [0, 10, 32], fov: 42 }}
         gl={createRenderer}
       >
         <Scene entityCount={entityCount} />

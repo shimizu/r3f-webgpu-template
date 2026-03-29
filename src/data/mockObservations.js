@@ -10,7 +10,13 @@ const TOKYO_BAY_VIEW = {
   centerLat: 35.54,
   worldScale: 900,
   altitudeScale: 0.00002,
+  extentLon: 0.45,
+  extentLat: 0.35,
+  sampleLonStep: 0.02,
+  sampleLatStep: 0.02,
 }
+
+export { TOKYO_BAY_VIEW }
 
 const TOKYO_BAY_BOUNDS = {
   minLon: 139.68,
