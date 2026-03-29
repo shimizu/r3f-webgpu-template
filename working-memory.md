@@ -95,6 +95,8 @@ GPU 実装で最初に使う候補:
 - `src/layers/MovingEntitiesLayer.jsx` を追加し、投影済み state を billboard instancing で描画している
 - `src/layers/BaseMapLayer.jsx` を追加し、`public/data/world.geojson` の海岸線を背景ラインとして描画できる
 - `src/gis/projection.js` を追加し、CPU 側の静的 GeoJSON 投影にも同じ view 設定を使えるようにした
+- `src/gis/views.js` を追加し、world / Tokyo Bay の view 定義を `gis` 配下へ集約した
+- `src/gis/projectionOptions.js` を追加し、CPU/GPU が同じ投影オプション解決を使う形に寄せた
 - `public/data/japan.geojson` を追加し、日本地図の単独表示でベースマップ確認を進めている
 - `public/data/world.geojson` も追加され、現在は world 表示デバッグに切り替えている
 - `src/gis/projection.js` で軸を入れ替え、現在は `x = 東西`, `y = 南北`, `z = 重なり回避` の扱い
@@ -124,7 +126,7 @@ GPU 実装で最初に使う候補:
 直近のデバッグ優先順位:
 
 1. `world.geojson` を適切な投影と scale で安定表示する
-2. GeoJSON と移動体で共有する projection kernel に寄せる
+2. GeoJSON と移動体で共有する projection kernel にさらに寄せる
 3. Interpolation Pass に進む
 
 ## 実装の最初の完成ライン
@@ -145,4 +147,4 @@ GPU 実装で最初に使う候補:
 - `npm run build` は通過済み
 - `npm run lint` は通過済み
 - `public/data/world.geojson` は今回の表示切り替え対象
-- 次回は world 表示の確認か、共通 projection kernel の整理から再開する
+- 次回は world 表示の確認か、Interpolation Pass の着手から再開する

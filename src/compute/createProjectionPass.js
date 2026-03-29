@@ -1,6 +1,7 @@
 import { StorageBufferAttribute } from 'three/webgpu'
 import { Fn, float, instanceIndex, int, select, storage, uniform, vec3 } from 'three/tsl'
 
+import { resolveProjectionOptions } from '../gis/projectionOptions'
 import { OBSERVATION_OFFSET, OBSERVATION_STRIDE } from './observationLayout'
 
 const WORKGROUP_SIZE = 64
@@ -13,6 +14,7 @@ export function createProjectionPass(rawObservationBuffer, options = {}) {
     throw new Error('このブラウザは WebGPU compute に未対応です')
   }
 
+  const projectionOptions = resolveProjectionOptions(options)
   const entityCount = rawObservationBuffer.length / OBSERVATION_STRIDE
   const rawObservationAttribute = new StorageBufferAttribute(rawObservationBuffer, 1)
   const projectedPositionAttribute = new StorageBufferAttribute(
@@ -31,12 +33,12 @@ export function createProjectionPass(rawObservationBuffer, options = {}) {
     entityCount
   )
 
-  const centerLonNode = uniform(options.centerLon ?? 139.82)
-  const centerLatNode = uniform(options.centerLat ?? 35.54)
-  const worldScaleNode = uniform(options.worldScale ?? 18)
-  const altitudeScaleNode = uniform(options.altitudeScale ?? 0.00035)
+  const centerLonNode = uniform(projectionOptions.centerLon)
+  const centerLatNode = uniform(projectionOptions.centerLat)
+  const worldScaleNode = uniform(projectionOptions.worldScale)
+  const altitudeScaleNode = uniform(projectionOptions.altitudeScale)
   const cosCenterLatNode = uniform(
-    Math.cos((options.centerLat ?? 35.54) * DEG2RAD)
+    Math.cos(projectionOptions.centerLat * DEG2RAD)
   )
 
   const computeNode = Fn(() => {

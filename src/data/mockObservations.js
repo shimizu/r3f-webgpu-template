@@ -5,19 +5,6 @@ import {
   OBSERVATION_STRIDE,
 } from '../compute/observationLayout'
 
-const TOKYO_BAY_VIEW = {
-  centerLon: 139.82,
-  centerLat: 35.54,
-  worldScale: 900,
-  altitudeScale: 0.00002,
-  extentLon: 0.45,
-  extentLat: 0.35,
-  sampleLonStep: 0.02,
-  sampleLatStep: 0.02,
-}
-
-export { TOKYO_BAY_VIEW }
-
 function hash01(value) {
   const x = Math.sin(value * 12.9898) * 43758.5453
   return x - Math.floor(x)
@@ -63,6 +50,5 @@ export function createMockObservationBuffer(entityCount) {
   return {
     entityCount,
     rawObservationBuffer,
-    view: TOKYO_BAY_VIEW,
   }
 }

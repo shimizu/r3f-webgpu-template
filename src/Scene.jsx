@@ -4,14 +4,9 @@ import { useFrame } from '@react-three/fiber'
 import { useRef, useState } from 'react'
 import { MOUSE } from 'three'
 
+import { WORLD_VIEW } from './gis/views'
 import BaseMapLayer from './layers/BaseMapLayer'
 import MovingEntitiesLayer from './layers/MovingEntitiesLayer'
-
-const WORLD_VIEW = {
-  centerLon: 0,
-  centerLat: 0,
-  worldScale: 4.6,
-}
 
 function PerformanceHud({ entityCount }) {
   const [fps, setFps] = useState(0)
