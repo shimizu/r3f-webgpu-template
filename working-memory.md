@@ -96,6 +96,7 @@ GPU 実装で最初に使う候補:
 - `src/layers/BaseMapLayer.jsx` を追加し、`public/data/world.geojson` の海岸線を背景ラインとして描画できる
 - `src/gis/projection.js` を追加し、CPU 側の静的 GeoJSON 投影にも同じ view 設定を使えるようにした
 - `public/data/japan.geojson` を追加し、日本地図の単独表示でベースマップ確認を進めている
+- `public/data/world.geojson` も追加され、現在は world 表示デバッグに切り替えている
 - `src/gis/projection.js` で軸を入れ替え、現在は `x = 東西`, `y = 南北`, `z = 重なり回避` の扱い
 - `japan.geojson` は points/lines として正しく表示できる状態になった
 - `reference/observation-buffer.md` に buffer layout メモを追加した
@@ -105,7 +106,7 @@ GPU 実装で最初に使う候補:
 - `.codex` に SessionStart / Stop フックを追加済み
 - SessionStart で `working-memory.md` を developer context に注入する
 - Stop で `working-memory.md` の整合確認を促す継続フックを入れた
-- 現在は移動体を非表示にして、日本地図を points/lines で正しく表示できている
+- 現在は移動体を非表示にして、`world.geojson` の表示確認を進めている
 
 ## 次に着手するべき作業
 
@@ -119,9 +120,10 @@ GPU 実装で最初に使う候補:
 
 直近のデバッグ優先順位:
 
-1. GeoJSON と移動体で共有する projection kernel に寄せる
-2. それから移動体表示を戻す
-3. Interpolation Pass に進む
+1. `world.geojson` を適切な投影と scale で安定表示する
+2. GeoJSON と移動体で共有する projection kernel に寄せる
+3. それから移動体表示を戻す
+4. Interpolation Pass に進む
 
 ## 実装の最初の完成ライン
 
@@ -140,5 +142,5 @@ GPU 実装で最初に使う候補:
 - Stop hook は 1 回だけ継続をかけ、そのターンの終了前確認を促す実装
 - `npm run build` は通過済み
 - `npm run lint` は通過済み
-- `public/data/world.geojson` は未追跡のまま残っている
-- 次回は共通 projection kernel の整理か、Interpolation Pass の着手から再開する
+- `public/data/world.geojson` は今回の表示切り替え対象
+- 次回は world 表示の確認か、共通 projection kernel の整理から再開する

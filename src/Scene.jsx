@@ -5,10 +5,10 @@ import { useRef, useState } from 'react'
 
 import BaseMapLayer from './layers/BaseMapLayer'
 
-const JAPAN_VIEW = {
-  centerLon: 138.46212811651623,
-  centerLat: 34.86709218163738,
-  worldScale: 28,
+const WORLD_VIEW = {
+  centerLon: 0,
+  centerLat: 0,
+  worldScale: 4.6,
 }
 
 function PerformanceHud({ entityCount }) {
@@ -34,7 +34,7 @@ function PerformanceHud({ entityCount }) {
       <div className='stats-panel'>
         <span>{entityCount.toLocaleString()} entities</span>
         <span>{fps} FPS</span>
-        <span>japan map debug</span>
+        <span>world map debug</span>
       </div>
     </Html>
   )
@@ -51,13 +51,13 @@ function Scene({ entityCount }) {
       <OrbitControls
         enableDamping
         maxPolarAngle={Math.PI * 0.495}
-        minDistance={4}
-        maxDistance={80}
+        minDistance={6}
+        maxDistance={120}
         target={[0, 0, 0]}
       />
 
       <PerformanceHud entityCount={entityCount} />
-      <BaseMapLayer url='/data/japan.geojson' view={JAPAN_VIEW} />
+      <BaseMapLayer url='/data/world.geojson' view={WORLD_VIEW} />
     </>
   )
 }
