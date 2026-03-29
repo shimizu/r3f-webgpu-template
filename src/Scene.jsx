@@ -14,8 +14,8 @@
      コンポーネント破棄時には dispose / destroy で後始末する。
 
   4. useFrame
-     毎フレーム current time を compute に渡して、
-     GPU 側で粒子座標を更新する。
+     毎フレーム current time と delta time を compute に渡して、
+     GPU 側でランダムウォーク用の粒子座標を更新する。
 
   5. Scene
      背景、ライト、グリッド、カメラ操作、HUD、粒子描画をまとめて
@@ -185,16 +185,16 @@ function ParticlesFromCompute({ gridSize }) {
     }
   }, [renderer, resources])
 
-  // 毎フレーム、現在時刻を compute に渡して粒子位置を更新する。
+  // 毎フレーム、現在時刻と delta time を compute に渡して粒子位置を更新する。
   // ここでは React の state は使わず、GPU 計算だけを進めているので軽い。
-  useFrame((state) => {
+  useFrame((state, delta) => {
     const system = systemRef.current
 
     if (!system) {
       return
     }
 
-    system.update(renderer, state.clock.elapsedTime)
+    system.update(renderer, state.clock.elapsedTime, delta)
   })
 
   if (resourceError) {

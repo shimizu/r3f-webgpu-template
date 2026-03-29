@@ -18,10 +18,12 @@
   4. Fn(() => { ... }).compute(...)
      GPU 上で各粒子をどう動かすかを compute shader として定義する。
      各スレッドは instanceIndex を使って自分の担当粒子を 1 つ処理する。
+     今回は「前フレームの位置に少しランダム移動を足しつつ、
+     初期位置へ弱く引き戻す」制約付きランダムウォークにしている。
 
   5. init / update
      renderer.compute(...) を呼ぶことで compute shader を実行する。
-     update では time を更新してから再実行し、アニメーションを進める。
+     update では time と delta を更新してから再実行し、アニメーションを進める。
 
   6. destroy
      compute 用リソースを破棄して、不要な GPU リソースを残さないようにする。
@@ -35,6 +37,7 @@
 import { StorageBufferAttribute } from 'three/webgpu'
 import {
   Fn,
+  add,
   cos,
   float,
   instanceIndex,
@@ -86,8 +89,9 @@ export function createBarsComputeRunner(inputValues) {
   )
 
   // uniform は CPU 側から毎フレーム更新する単一値。
-  // 今回は時間を渡して、波打つようなアニメーションを作る。
+  // 今回は経過時間と delta time を渡して、ランダムウォークを進める。
   const timeNode = uniform(0)
+  const deltaNode = uniform(1 / 60)
 
   // Fn(() => { ... }) は TSL で compute / shader 本体を組み立てる書き方。
   // JavaScript の見た目だが、中でやっているのは GPU 上で実行される式の構築。
@@ -96,40 +100,71 @@ export function createBarsComputeRunner(inputValues) {
     // 例えば 10000 粒子なら、各スレッドが 0, 1, 2... のどれかを担当する。
     const basePosition = basePositionNode.element(instanceIndex)
     const animatedPosition = animatedPositionNode.element(instanceIndex)
+    const currentPosition = animatedPosition.toVar()
 
     // 粒子ごとに少しずつ位相をずらすための値。
     // これがないと全粒子が同じ動きをして、平面的な印象になりやすい。
     const idPhase = float(instanceIndex).mul(0.11).toVar()
 
-    // 原点からの距離を使って、中心と外側で波の進み方を変える。
-    // vec2 にしているのは x-z 平面上の距離だけが必要だから。
-    const radius = length(vec2(basePosition.x, basePosition.z)).toVar()
+    // delta を 60fps 基準に寄せた係数。
+    // これで低 fps / 高 fps でも歩幅が極端に変わりにくくなる。
+    const frameScale = deltaNode.mul(60).toVar()
 
-    // angle は横方向の円運動に使う角度。
-    // time, 半径, 粒子番号を混ぜることで、同心円っぽい流れを作っている。
-    const angle = timeNode.mul(0.45).add(radius.mul(1.35)).add(idPhase).toVar()
-
-    // lift は y 方向の上下運動。
-    // x と z の位置も加えているので、格子全体が波打つように見える。
-    const lift = sin(
-      timeNode
-        .mul(1.7)
-        .add(basePosition.x.mul(1.9))
-        .add(basePosition.z.mul(1.3))
-        .add(idPhase)
+    // 疑似ランダムな歩行方向を作る。
+    // 真の乱数ではなく、時間・粒子番号・現在位置を混ぜた三角関数で
+    // 毎フレーム少しずつ向きが変わるようにしている。
+    const drift = vec3(
+      sin(
+        add(
+          add(timeNode.mul(0.83), idPhase.mul(12.9898)),
+          add(currentPosition.z.mul(4.37), currentPosition.y.mul(1.91))
+        )
+      ),
+      sin(
+        add(
+          add(timeNode.mul(1.17), idPhase.mul(78.233)),
+          add(currentPosition.x.mul(3.71), currentPosition.z.mul(2.13))
+        )
+      ).mul(0.55),
+      cos(
+        add(
+          add(timeNode.mul(0.96), idPhase.mul(45.164)),
+          add(currentPosition.x.mul(4.91), currentPosition.y.mul(2.41))
+        )
+      )
     )
-      .mul(0.22)
+      .mul(0.0028)
+      .mul(frameScale)
       .toVar()
 
-    // assign(...) で「この粒子の新しい座標」を GPU バッファに書き込む。
-    // x/z は円を描くように少し揺らし、y は上下させている。
-    // basePosition を元にしているので、時間が進んでも元の配置は保たれる。
-    animatedPosition.assign(
-      vec3(
-        basePosition.x.add(cos(angle).mul(0.18)),
-        basePosition.y.add(lift),
-        basePosition.z.add(sin(angle).mul(0.18))
+    // 初期位置へ弱く戻す力。
+    // ランダムウォークだけだと粒子が無限に拡散するので、
+    // basePosition との差分を少しだけ戻し方向に使う。
+    const settle = basePosition.sub(currentPosition).mul(0.021).mul(frameScale).toVar()
+
+    // 初期位置からの距離が大きいほど、戻る力を少し強める。
+    // これで全体の形が完全には崩れず、見た目が安定する。
+    const radius = length(
+      vec2(
+        currentPosition.x.sub(basePosition.x),
+        currentPosition.z.sub(basePosition.z)
       )
+    ).toVar()
+    const verticalOffset = currentPosition.y.sub(basePosition.y).toVar()
+    const leash = vec3(
+      currentPosition.x.sub(basePosition.x).mul(-0.016),
+      verticalOffset.mul(-0.028),
+      currentPosition.z.sub(basePosition.z).mul(-0.016)
+    )
+      .mul(radius.add(verticalOffset.mul(verticalOffset)).add(0.35))
+      .mul(frameScale)
+      .toVar()
+
+    // assign(...) で「この粒子の次の座標」を GPU バッファに書き込む。
+    // 前フレーム位置に drift / settle / leash を加算していくので、
+    // 動きが積み重なるランダムウォークになる。
+    animatedPosition.assign(
+      currentPosition.add(drift).add(settle).add(leash)
     )
 
     // ここで return は不要。
@@ -155,10 +190,11 @@ export function createBarsComputeRunner(inputValues) {
       renderer.compute(computeNode)
     },
 
-    update(renderer, time) {
-      // 毎フレーム、CPU 側で timeNode の値を更新してから compute を再実行する。
-      // これで「時間に応じて座標が変化する」アニメーションになる。
+    update(renderer, time, delta) {
+      // 毎フレーム、CPU 側で uniform を更新してから compute を再実行する。
+      // time は歩行方向の変化に、delta は歩幅の安定化に使う。
       timeNode.value = time
+      deltaNode.value = delta
       renderer.compute(computeNode)
     },
 
