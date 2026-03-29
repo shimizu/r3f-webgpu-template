@@ -5,7 +5,7 @@ import { WebGPURenderer } from 'three/webgpu'
 import Scene from './Scene'
 import './App.css'
 
-const GRID_PRESETS = [26, 40, 64, 96, 128]
+const GRID_PRESETS = [128, 256, 384, 512, 768, 1024, 1280]
 
 async function createRenderer(props) {
   const renderer = new WebGPURenderer({
@@ -19,14 +19,14 @@ async function createRenderer(props) {
 }
 
 function App() {
-  const [gridSize, setGridSize] = useState(64)
+  const [gridSize, setGridSize] = useState(GRID_PRESETS[0])
 
   return (
     <div className='app-shell'>
       <div className='control-panel'>
-        <p className='control-title'>Particle Stress Test</p>
+        <p className='control-title'>Particle ストレステスト</p>
         <p className='control-copy'>
-          粒子数を切り替えて、FPS がどこで落ち始めるか確認します。
+          粒子数を切り替えて、FPS がどこで落ち始めるか確認。
         </p>
         <div className='control-grid'>
           {GRID_PRESETS.map((size) => {

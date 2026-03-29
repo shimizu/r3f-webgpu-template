@@ -5,11 +5,13 @@
      Scene.jsx から受け取った粒子の初期座標配列をもとに、
      WebGPU compute 用の更新システムを組み立てる。
 
-  2. StorageBufferAttribute を 2 つ作る
-     - basePositionAttribute:
-       初期位置を保持する「読み取り専用の元データ」
+  2. StorageBufferAttribute を 4 つ作る
      - animatedPositionAttribute:
        毎フレーム compute で更新し、描画にも使う出力先
+     - velocityAttribute:
+       粒子ごとの速度を保持する出力先
+     - lifeAttribute / maxLifeAttribute:
+       残り寿命と最大寿命を保持する出力先
 
   3. TSL ノードを作る
      storage(...) で GPU バッファを参照し、
@@ -18,19 +20,21 @@
   4. Fn(() => { ... }).compute(...)
      GPU 上で各粒子をどう動かすかを compute shader として定義する。
      各スレッドは instanceIndex を使って自分の担当粒子を 1 つ処理する。
-     今回は「前フレームの位置に少しランダム移動を足しつつ、
-     初期位置へ弱く引き戻す」制約付きランダムウォークにしている。
+     今回は「速度にランダムな揺らぎを加えながら移動し、
+     範囲外に出そうなら反射し、寿命が切れたらリスポーンする」
+     独立粒子系の挙動にしている。
 
   5. init / update
      renderer.compute(...) を呼ぶことで compute shader を実行する。
-     update では time と delta を更新してから再実行し、アニメーションを進める。
+     update では time と delta を更新してから再実行し、
+     位置・速度・寿命のアニメーションを進める。
 
   6. destroy
      compute 用リソースを破棄して、不要な GPU リソースを残さないようにする。
 
   つまりこのファイルは、
-  「初期座標を GPU バッファへ渡す」
-  「各粒子の新しい座標を GPU で計算する」
+  「初期座標から現在位置・速度・寿命を GPU バッファへ作る」
+  「各粒子の新しい座標・速度・寿命を GPU で計算する」
   「その結果を Scene 側へ返して描画に使う」
   という compute 更新レイヤーを担当している。
 */
@@ -38,14 +42,16 @@ import { StorageBufferAttribute } from 'three/webgpu'
 import {
   Fn,
   add,
+  clamp,
   cos,
   float,
   instanceIndex,
   length,
+  normalize,
+  select,
   sin,
   storage,
   uniform,
-  vec2,
   vec3,
 } from 'three/tsl'
 
@@ -54,6 +60,52 @@ import {
 // 「何件ずつ GPU に担当させるか」という単位を決める必要がある。
 // ここでは 64 要素ずつ処理する設定にしている。
 const WORKGROUP_SIZE = 64
+const BOUNDS_PADDING = 1.25
+
+function hash01(value) {
+  const x = Math.sin(value * 12.9898) * 43758.5453
+  return x - Math.floor(x)
+}
+
+function createVelocitySeed(inputValues) {
+  const particleCount = inputValues.length / 3
+  const velocities = new Float32Array(inputValues.length)
+
+  for (let index = 0; index < particleCount; index += 1) {
+    const baseIndex = index * 3
+    const seed = index + 1
+    const theta = hash01(seed * 0.731) * Math.PI * 2
+    const phi = hash01(seed * 1.913) * Math.PI * 2
+    const speed = 0.0025 + hash01(seed * 2.417) * 0.008
+    const x = Math.cos(theta) * Math.cos(phi)
+    const y = Math.sin(phi) * 0.75
+    const z = Math.sin(theta) * Math.cos(phi)
+    const length = Math.hypot(x, y, z) || 1
+
+    velocities[baseIndex] = (x / length) * speed
+    velocities[baseIndex + 1] = (y / length) * speed
+    velocities[baseIndex + 2] = (z / length) * speed
+  }
+
+  return velocities
+}
+
+function createLifeSeed(inputValues) {
+  const particleCount = inputValues.length / 3
+  const maxLives = new Float32Array(particleCount)
+  const lives = new Float32Array(particleCount)
+
+  for (let index = 0; index < particleCount; index += 1) {
+    const seed = index + 1
+    const maxLife = 2.4 + hash01(seed * 3.171) * 3.2
+    const initialLife = maxLife * (0.25 + hash01(seed * 5.731) * 0.75)
+
+    maxLives[index] = maxLife
+    lives[index] = initialLife
+  }
+
+  return { lives, maxLives }
+}
 
 export function createBarsComputeRunner(inputValues) {
   // WebGPU compute は対応ブラウザでしか動かない。
@@ -65,107 +117,160 @@ export function createBarsComputeRunner(inputValues) {
   // inputValues は [x, y, z, x, y, z, ...] の配列なので、
   // 総要素数を 3 で割ると粒子数になる。
   const particleCount = inputValues.length / 3
+  const velocitySeed = createVelocitySeed(inputValues)
+  const { lives, maxLives } = createLifeSeed(inputValues)
+  const maxBaseRadius = inputValues.reduce((maxRadius, value) => {
+    return Math.max(maxRadius, Math.abs(value))
+  }, 0)
+  const bounds = maxBaseRadius + BOUNDS_PADDING
 
-  // StorageBufferAttribute は GPU から読み書きできる座標バッファ。
-  // basePositionAttribute は「初期位置の固定データ」、
-  // animatedPositionAttribute は「毎フレーム更新される描画用データ」として分けている。
-  const basePositionAttribute = new StorageBufferAttribute(inputValues, 3)
+  // StorageBufferAttribute は GPU から読み書きできるバッファ。
+  // animatedPositionAttribute は「毎フレーム更新される位置データ」。
   const animatedPositionAttribute = new StorageBufferAttribute(
     inputValues.slice(),
     3
   )
+  const velocityAttribute = new StorageBufferAttribute(velocitySeed, 3)
+  const lifeAttribute = new StorageBufferAttribute(lives, 1)
+  const maxLifeAttribute = new StorageBufferAttribute(maxLives, 1)
 
   // storage(...) は TSL から GPU バッファを参照するためのノードを作る。
-  // base 側は toReadOnly() にして、compute 中で書き換えない前提を明確にしている。
-  const basePositionNode = storage(basePositionAttribute, 'vec3', particleCount)
-    .toReadOnly()
-
-  // こちらは書き込み対象。
-  // compute shader の各スレッドが、自分の担当粒子の新しい座標を書き込む。
+  // compute shader の各スレッドが、自分の担当粒子の現在位置・速度・寿命を書き換える。
   const animatedPositionNode = storage(
     animatedPositionAttribute,
     'vec3',
     particleCount
   )
+  const velocityNode = storage(velocityAttribute, 'vec3', particleCount)
+  const lifeNode = storage(lifeAttribute, 'float', particleCount)
+  const maxLifeNode = storage(maxLifeAttribute, 'float', particleCount).toReadOnly()
 
   // uniform は CPU 側から毎フレーム更新する単一値。
-  // 今回は経過時間と delta time を渡して、ランダムウォークを進める。
+  // 今回は経過時間と delta time を渡して、
+  // 速度更新・位置更新・寿命更新を進める。
   const timeNode = uniform(0)
   const deltaNode = uniform(1 / 60)
+  const boundsNode = uniform(bounds)
 
   // Fn(() => { ... }) は TSL で compute / shader 本体を組み立てる書き方。
   // JavaScript の見た目だが、中でやっているのは GPU 上で実行される式の構築。
   const computeNode = Fn(() => {
     // instanceIndex は「今このスレッドが担当している粒子番号」。
     // 例えば 10000 粒子なら、各スレッドが 0, 1, 2... のどれかを担当する。
-    const basePosition = basePositionNode.element(instanceIndex)
     const animatedPosition = animatedPositionNode.element(instanceIndex)
+    const velocity = velocityNode.element(instanceIndex)
+    const life = lifeNode.element(instanceIndex)
     const currentPosition = animatedPosition.toVar()
+    const currentVelocity = velocity.toVar()
+    const currentLife = life.toVar()
+    const maxLife = maxLifeNode.element(instanceIndex)
 
-    // 粒子ごとに少しずつ位相をずらすための値。
-    // これがないと全粒子が同じ動きをして、平面的な印象になりやすい。
+    // 粒子ごとの疑似乱数シード。
+    // これにより、各粒子が別々の揺らぎ方をする。
     const idPhase = float(instanceIndex).mul(0.11).toVar()
 
     // delta を 60fps 基準に寄せた係数。
     // これで低 fps / 高 fps でも歩幅が極端に変わりにくくなる。
     const frameScale = deltaNode.mul(60).toVar()
 
-    // 疑似ランダムな歩行方向を作る。
-    // 真の乱数ではなく、時間・粒子番号・現在位置を混ぜた三角関数で
-    // 毎フレーム少しずつ向きが変わるようにしている。
-    const drift = vec3(
+    // 速度へ加えるランダムな揺らぎ。
+    // 真の乱数ではなく、時間・粒子番号・現在位置を混ぜた連続的なノイズなので、
+    // 粒子ごとに独立しつつ、フレーム間で急に破綻しにくい。
+    const jitter = vec3(
       sin(
         add(
-          add(timeNode.mul(0.83), idPhase.mul(12.9898)),
-          add(currentPosition.z.mul(4.37), currentPosition.y.mul(1.91))
+          add(timeNode.mul(1.93), idPhase.mul(17.231)),
+          add(currentPosition.z.mul(6.37), currentPosition.y.mul(3.11))
         )
       ),
       sin(
         add(
-          add(timeNode.mul(1.17), idPhase.mul(78.233)),
-          add(currentPosition.x.mul(3.71), currentPosition.z.mul(2.13))
+          add(timeNode.mul(2.17), idPhase.mul(53.817)),
+          add(currentPosition.x.mul(5.71), currentPosition.z.mul(4.13))
         )
-      ).mul(0.55),
+      ),
       cos(
         add(
-          add(timeNode.mul(0.96), idPhase.mul(45.164)),
-          add(currentPosition.x.mul(4.91), currentPosition.y.mul(2.41))
+          add(timeNode.mul(1.76), idPhase.mul(91.417)),
+          add(currentPosition.x.mul(7.11), currentPosition.y.mul(3.41))
         )
       )
     )
-      .mul(0.0028)
+      .mul(0.0009)
       .mul(frameScale)
       .toVar()
 
-    // 初期位置へ弱く戻す力。
-    // ランダムウォークだけだと粒子が無限に拡散するので、
-    // basePosition との差分を少しだけ戻し方向に使う。
-    const settle = basePosition.sub(currentPosition).mul(0.021).mul(frameScale).toVar()
+    // 速度を少しずつ揺らし、完全な直進にならないようにする。
+    const nextVelocity = currentVelocity.add(jitter).toVar()
 
-    // 初期位置からの距離が大きいほど、戻る力を少し強める。
-    // これで全体の形が完全には崩れず、見た目が安定する。
-    const radius = length(
-      vec2(
-        currentPosition.x.sub(basePosition.x),
-        currentPosition.z.sub(basePosition.z)
+    // 速度の大きさをある範囲に丸めて、速すぎる粒子・遅すぎる粒子を抑える。
+    const speed = length(nextVelocity).toVar()
+    const normalizedVelocity = normalize(nextVelocity).toVar()
+    const clampedSpeed = clamp(speed, 0.003, 0.015).toVar()
+    const stabilizedVelocity = normalizedVelocity.mul(clampedSpeed).toVar()
+
+    // 速度を使って次の位置を進める。
+    const nextPosition = currentPosition
+      .add(stabilizedVelocity.mul(frameScale))
+      .toVar()
+
+    // 範囲外へ出そうな軸だけ速度を反転して、箱の中で跳ね返す。
+    // こうすると粒子が散りすぎず、しかも全粒子が別々に動いて見えやすい。
+    const hitX = nextPosition.x.abs().greaterThan(boundsNode)
+    const hitY = nextPosition.y.abs().greaterThan(boundsNode.mul(0.7))
+    const hitZ = nextPosition.z.abs().greaterThan(boundsNode)
+
+    const bouncedVelocity = vec3(
+      select(hitX, stabilizedVelocity.x.negate(), stabilizedVelocity.x),
+      select(hitY, stabilizedVelocity.y.negate(), stabilizedVelocity.y),
+      select(hitZ, stabilizedVelocity.z.negate(), stabilizedVelocity.z)
+    ).toVar()
+
+    const boundedPosition = vec3(
+      clamp(nextPosition.x, boundsNode.negate(), boundsNode),
+      clamp(nextPosition.y, boundsNode.mul(-0.7), boundsNode.mul(0.7)),
+      clamp(nextPosition.z, boundsNode.negate(), boundsNode)
+    ).toVar()
+
+    // 寿命は毎フレーム減っていき、0 以下ならランダムな位置と速度で再生成する。
+    const nextLife = currentLife.sub(deltaNode).toVar()
+    const expired = nextLife.lessThanEqual(0)
+    const respawnSeed = timeNode.mul(0.31).add(idPhase.mul(41.17)).toVar()
+    const respawnPosition = vec3(
+      sin(respawnSeed.mul(1.3).add(idPhase.mul(3.7))).mul(boundsNode),
+      sin(respawnSeed.mul(1.9).add(idPhase.mul(7.1))).mul(boundsNode.mul(0.7)),
+      cos(respawnSeed.mul(1.6).add(idPhase.mul(5.3))).mul(boundsNode)
+    ).toVar()
+    const respawnDirection = normalize(
+      vec3(
+        sin(respawnSeed.mul(2.1).add(idPhase.mul(9.2))),
+        sin(respawnSeed.mul(2.7).add(idPhase.mul(13.4))),
+        cos(respawnSeed.mul(2.4).add(idPhase.mul(11.7)))
       )
     ).toVar()
-    const verticalOffset = currentPosition.y.sub(basePosition.y).toVar()
-    const leash = vec3(
-      currentPosition.x.sub(basePosition.x).mul(-0.016),
-      verticalOffset.mul(-0.028),
-      currentPosition.z.sub(basePosition.z).mul(-0.016)
-    )
-      .mul(radius.add(verticalOffset.mul(verticalOffset)).add(0.35))
-      .mul(frameScale)
+    const respawnSpeed = maxLife
+      .mul(0.0016)
+      .add(0.0024)
+      .mul(sin(respawnSeed.mul(3.2)).mul(0.5).add(1.0))
       .toVar()
+    const respawnVelocity = respawnDirection.mul(respawnSpeed).toVar()
+    const finalVelocity = vec3(
+      select(expired, respawnVelocity.x, bouncedVelocity.x),
+      select(expired, respawnVelocity.y, bouncedVelocity.y),
+      select(expired, respawnVelocity.z, bouncedVelocity.z)
+    ).toVar()
+    const finalPosition = vec3(
+      select(expired, respawnPosition.x, boundedPosition.x),
+      select(expired, respawnPosition.y, boundedPosition.y),
+      select(expired, respawnPosition.z, boundedPosition.z)
+    ).toVar()
+    const finalLife = select(expired, maxLife, nextLife).toVar()
 
     // assign(...) で「この粒子の次の座標」を GPU バッファに書き込む。
-    // 前フレーム位置に drift / settle / leash を加算していくので、
-    // 動きが積み重なるランダムウォークになる。
-    animatedPosition.assign(
-      currentPosition.add(drift).add(settle).add(leash)
-    )
+    // 位置だけでなく速度と寿命も保持するので、粒子ごとに独立した軌跡になる。
+    velocity.assign(finalVelocity)
+    animatedPosition.assign(finalPosition)
+    life.assign(finalLife)
 
     // ここで return は不要。
     // compute shader は「値を返す」より「バッファを書き換える」用途が中心。
@@ -177,11 +282,12 @@ export function createBarsComputeRunner(inputValues) {
   return {
     particleCount,
 
-    // Scene.jsx 側ではこの attribute を geometry の position として使う。
-    // これにより compute 結果がそのまま描画位置に反映される。
+    // compute が更新した位置データそのもの。
+    // 描画側はこの位置バッファを直接参照して、各粒子を billboard 表示する。
     positionAttribute: animatedPositionAttribute,
 
-    // NodeMaterial から参照するためのノード表現も外へ渡す。
+    // Scene.jsx 側ではこちらを material.vertexNode から参照し、
+    // 各インスタンスの描画位置として使っている。
     positionNode: animatedPositionNode,
 
     init(renderer) {

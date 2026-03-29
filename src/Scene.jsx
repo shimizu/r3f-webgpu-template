@@ -8,6 +8,7 @@
   2. ParticlesFromCompute
      gridSize から粒子配列と粒サイズを決め、
      createBarsComputeRunner(...) で WebGPU compute 用の更新システムを作る。
+     描画は points ではなく、billboard 化したインスタンス quad で行う。
 
   3. useEffect
      three.js / WebGPU の geometry, material, compute system を初期化し、
@@ -15,7 +16,7 @@
 
   4. useFrame
      毎フレーム current time と delta time を compute に渡して、
-     GPU 側でランダムウォーク用の粒子座標を更新する。
+     GPU 側で位置・速度・寿命を更新する。
 
   5. Scene
      背景、ライト、グリッド、カメラ操作、HUD、粒子描画をまとめて
@@ -24,16 +25,33 @@
   つまりこのファイルは、
   「粒子の元データを作る」
   「GPU で毎フレーム動かす」
-  「その結果を points として描画する」
+  「その結果をサイズ変更可能な quad パーティクルとして描画する」
   という 3 段階を React Three Fiber 上でつないでいる。
 */
 import { Html, OrbitControls } from '@react-three/drei'
 import { useFrame, useThree } from '@react-three/fiber'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { BufferGeometry } from 'three'
-import { PointsNodeMaterial } from 'three/webgpu'
+import { Color, DoubleSide, InstancedMesh, Matrix4, PlaneGeometry } from 'three'
+import { MeshBasicNodeMaterial } from 'three/webgpu'
+import { billboarding, instanceIndex, shapeCircle } from 'three/tsl'
 
 import { createBarsComputeRunner } from './compute/runBarsCompute'
+
+const PARTICLE_SIZE = 0.018
+
+function hash01(value) {
+  const x = Math.sin(value * 12.9898) * 43758.5453
+  return x - Math.floor(x)
+}
+
+function createParticleColor(index, count) {
+  const base = index / Math.max(count, 1)
+  const hue = hash01(base * 97.13 + index * 0.0017)
+  const saturation = 0.45 + hash01(base * 53.71 + 11.3) * 0.5
+  const lightness = 0.38 + hash01(base * 71.91 + 29.8) * 0.34
+
+  return new Color().setHSL(hue, saturation, lightness)
+}
 
 // 粒子を最初に並べるための座標配列を作る。
 // 今回は x-z 平面に正方形グリッドで並べ、y は 0 にそろえている。
@@ -103,7 +121,7 @@ function ParticlesFromCompute({ gridSize }) {
   const systemRef = useRef(null)
   const mountedRef = useRef(false)
 
-  // gridSize が変わったときだけ、粒子の初期座標と描画サイズを再計算する。
+  // gridSize が変わったときだけ、粒子の初期座標を再計算する。
   // useMemo にしているのは、通常の再レンダーで毎回大きな Float32Array を
   // 作り直さないため。
   const { particleSeed, particleSize } = useMemo(() => {
@@ -112,7 +130,7 @@ function ParticlesFromCompute({ gridSize }) {
 
     return {
       particleSeed: createParticleSeed(gridSize, spacing),
-      particleSize: Math.max(0.018, spacing * 0.38),
+      particleSize: PARTICLE_SIZE,
     }
   }, [gridSize])
 
@@ -120,25 +138,45 @@ function ParticlesFromCompute({ gridSize }) {
   // try/catch でメッセージ化して UI 全体が落ちないようにしている。
   const { resourceError, resources } = useMemo(() => {
     try {
-      // createBarsComputeRunner は compute 更新の中身をまとめたヘルパー。
+      // createBarsComputeRunner は、粒子の位置・速度・寿命を
+      // GPU 側で更新する compute システムをまとめたヘルパー。
       const system = createBarsComputeRunner(particleSeed)
-      const geometry = new BufferGeometry()
-      const material = new PointsNodeMaterial()
+      const geometry = new PlaneGeometry(particleSize, particleSize, 1, 1)
+      const material = new MeshBasicNodeMaterial({
+        color: '#ffffff',
+        transparent: true,
+        depthWrite: false,
+        side: DoubleSide,
+      })
+      const mesh = new InstancedMesh(geometry, material, system.particleCount)
+      const identityMatrix = new Matrix4()
 
-      // position attribute に「compute が更新する座標バッファ」を割り当てる。
-      // これで points 描画時に GPU 側の最新位置が使われる。
-      geometry.setAttribute('position', system.positionAttribute)
-      geometry.computeBoundingSphere()
+      // InstancedMesh は instance 行列を前提にしているので、
+      // 初期状態として全インスタンスを単位行列にしておく。
+      for (let index = 0; index < system.particleCount; index += 1) {
+        mesh.setMatrixAt(index, identityMatrix)
+        mesh.setColorAt(index, createParticleColor(index, system.particleCount))
+      }
 
-      // material.positionNode を設定すると、
-      // NodeMaterial が position 計算元としてこの属性を参照する。
-      material.positionNode = system.positionNode.toAttribute()
-      material.color.set('#8fe3ff')
-      material.size = particleSize
+      // compute が更新する位置バッファを、各インスタンスのワールド位置として参照する。
+      // billboarding(...) を使うことで quad が常にカメラを向く。
+      material.vertexNode = billboarding({
+        position: system.positionNode.element(instanceIndex),
+        horizontal: true,
+        vertical: true,
+      })
+
+      // quad の UV から円形の alpha を作り、四角い板ポリ感を消す。
+      material.opacityNode = shapeCircle()
+      material.alphaTest = 0.5
+
+      // 動く粒子群は GPU 側で位置が毎フレーム変わるので、
+      // バウンディング依存のカリングは切っておく。
+      mesh.frustumCulled = false
 
       return {
         resourceError: null,
-        resources: { geometry, material, system },
+        resources: { geometry, material, mesh, system },
       }
     } catch (computeError) {
       return {
@@ -185,7 +223,8 @@ function ParticlesFromCompute({ gridSize }) {
     }
   }, [renderer, resources])
 
-  // 毎フレーム、現在時刻と delta time を compute に渡して粒子位置を更新する。
+  // 毎フレーム、現在時刻と delta time を compute に渡して
+  // 粒子の位置・速度・寿命を更新する。
   // ここでは React の state は使わず、GPU 計算だけを進めているので軽い。
   useFrame((state, delta) => {
     const system = systemRef.current
@@ -202,11 +241,9 @@ function ParticlesFromCompute({ gridSize }) {
     return null
   }
 
-  // <points> は three.js の Point Cloud 表現。
-  // geometry に粒子座標、material に見た目を渡すことで粒子群を描画する。
-  return (
-    <points geometry={resources.geometry} material={resources.material} />
-  )
+  // 描画は points ではなく、インスタンス化した quad を billboard 表示している。
+  // これで compute 駆動のまま、粒子サイズや色を material 側で制御できる。
+  return <primitive object={resources.mesh} />
 }
 
 function Scene({ gridSize }) {
