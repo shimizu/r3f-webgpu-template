@@ -16,8 +16,8 @@
 
 ## 直近のコミット
 
-- `55e5903`
-- message: `update working memory`
+- `b19cb54`
+- message: `add gpu gis architecture docs`
 
 ## 主要な決定事項
 
@@ -156,6 +156,4 @@ GPU 実装で最初に使う候補:
 - `npm run build` は通過済み
 - `npm run lint` は通過済み
 - `public/data/world.geojson` は今回の表示切り替え対象
-- 未コミット変更:
-  - [gpu-gis-particle-architecture.md](/home/shimizu/_playground/three-fiber/r3f-webgpu-template/docs/gpu-gis-particle-architecture.md): パーティクルシステムの仕組み、アーキテクチャ、拡張方針、実データの GPU 転送方法を追加
 - 次回は world 表示の確認か、Interpolation Pass の補間仕様調整から再開する
