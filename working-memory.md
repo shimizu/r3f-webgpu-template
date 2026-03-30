@@ -16,8 +16,8 @@
 
 ## 直近のコミット
 
-- `c70528c`
-- message: `add gpu first gis plan`
+- `087dd75`
+- message: `update app copy`
 
 ## 主要な決定事項
 
@@ -90,6 +90,7 @@ GPU 実装で最初に使う候補:
 
 - 既存のランダムウォーク中心 Scene は、最小 GIS Scene へ置き換えた
 - `src/compute/createProjectionPass.js` を追加し、GPU で `lon/lat/alt -> world position` を投影できる
+- `src/compute/createInterpolationPass.js` を追加し、`prevLon/prevLat` と `lon/lat` を GPU 補間できる
 - `src/compute/observationLayout.js` で `rawObservationBuffer` の stride と offsets を固定した
 - `src/data/mockObservations.js` で `lon:-180..180`, `lat:-90..90` の全世界ランダム観測データを生成できる
 - `src/layers/MovingEntitiesLayer.jsx` を追加し、投影済み state を billboard instancing で描画している
@@ -101,11 +102,15 @@ GPU 実装で最初に使う候補:
 - `public/data/world.geojson` も追加され、現在は world 表示デバッグに切り替えている
 - `src/gis/projection.js` で軸を入れ替え、現在は `x = 東西`, `y = 南北`, `z = 重なり回避` の扱い
 - `src/compute/createProjectionPass.js` も軸を揃え、現在は `x = 東西`, `y = 南北`, `z = 0` でパーティクルを平面へ置いている
+- `MovingEntitiesLayer` は `Interpolation Pass` を使う形へ変更済みで、現在は 6 秒ループで動く
+- 移動量には個体ごとのランダム倍率を入れていて、速度は最大約 4 倍までばらつく
 - `japan.geojson` は points/lines として正しく表示できる状態になった
 - `MovingEntitiesLayer` は world view に合わせて再表示済み
 - camera の `near/far` と `OrbitControls.minDistance` を緩め、近距離ズームしやすくした
+- UI の件数プリセットには `500000` と `1000000` を追加済み
+- control panel の説明文は、ComputeShader で緯度経度から画面座標へ変換する実験内容に合わせて更新済み
 - `reference/observation-buffer.md` に buffer layout メモを追加した
-- 現時点では Projection Pass のみで、補間、トレイル、風場、LOD はまだ未実装
+- トレイル、風場、LOD はまだ未実装
 - `plan.md` は GPU First 方針に更新済み
 - `task.md` は実装タスク分解済み
 - `.codex` に SessionStart / Stop フックを追加済み
@@ -127,7 +132,8 @@ GPU 実装で最初に使う候補:
 
 1. `world.geojson` を適切な投影と scale で安定表示する
 2. GeoJSON と移動体で共有する projection kernel にさらに寄せる
-3. Interpolation Pass に進む
+3. Interpolation Pass の速度・補間仕様を必要なら調整する
+4. その後にトレイルへ進む
 
 ## 実装の最初の完成ライン
 
@@ -147,4 +153,8 @@ GPU 実装で最初に使う候補:
 - `npm run build` は通過済み
 - `npm run lint` は通過済み
 - `public/data/world.geojson` は今回の表示切り替え対象
-- 次回は world 表示の確認か、Interpolation Pass の着手から再開する
+- 未コミット変更:
+  - [mockObservations.js](/home/shimizu/_playground/three-fiber/r3f-webgpu-template/src/data/mockObservations.js): 全世界ランダム配置 + 速度倍率 `1..4`
+  - [MovingEntitiesLayer.jsx](/home/shimizu/_playground/three-fiber/r3f-webgpu-template/src/layers/MovingEntitiesLayer.jsx): loop duration を `6` 秒へ短縮
+  - [createInterpolationPass.js](/home/shimizu/_playground/three-fiber/r3f-webgpu-template/src/compute/createInterpolationPass.js): 未コミットの新規ファイル
+- 次回はまず未コミット分をどう扱うか確認し、その後に world 表示の確認か補間仕様調整から再開する

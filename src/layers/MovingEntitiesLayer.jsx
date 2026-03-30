@@ -1,11 +1,11 @@
 /* eslint-disable react/no-unknown-property, react/prop-types */
 import { useEffect, useMemo, useRef } from 'react'
-import { useThree } from '@react-three/fiber'
+import { useFrame, useThree } from '@react-three/fiber'
 import { Color, DoubleSide, InstancedMesh, Matrix4, PlaneGeometry } from 'three'
 import { MeshBasicNodeMaterial } from 'three/webgpu'
 import { billboarding, instanceIndex, shapeCircle } from 'three/tsl'
 
-import { createProjectionPass } from '../compute/createProjectionPass'
+import { createInterpolationPass } from '../compute/createInterpolationPass'
 import {
   ENTITY_TYPE,
   OBSERVATION_OFFSET,
@@ -14,6 +14,7 @@ import {
 import { createMockObservationBuffer } from '../data/mockObservations'
 
 const ENTITY_SIZE = 0.017
+const LOOP_DURATION = 6
 
 function getEntityColor(rawObservationBuffer, index) {
   const type = rawObservationBuffer[index * OBSERVATION_STRIDE + OBSERVATION_OFFSET.type]
@@ -30,7 +31,10 @@ function MovingEntitiesLayer({ entityCount, view }) {
 
   const { resourceError, resources } = useMemo(() => {
     try {
-      const system = createProjectionPass(dataset.rawObservationBuffer, view)
+      const system = createInterpolationPass(dataset.rawObservationBuffer, {
+        ...view,
+        loopDuration: LOOP_DURATION,
+      })
       const geometry = new PlaneGeometry(ENTITY_SIZE, ENTITY_SIZE, 1, 1)
       const material = new MeshBasicNodeMaterial({
         color: '#ffffff',
@@ -93,6 +97,20 @@ function MovingEntitiesLayer({ entityCount, view }) {
       systemRef.current = null
     }
   }, [renderer, resources])
+
+  useFrame((state) => {
+    const system = systemRef.current
+
+    if (!system) {
+      return
+    }
+
+    const playbackTime = state.clock.elapsedTime % LOOP_DURATION
+    system.update(renderer, playbackTime, {
+      ...view,
+      loopDuration: LOOP_DURATION,
+    })
+  })
 
   if (resourceError) {
     console.error(resourceError)
