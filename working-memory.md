@@ -16,8 +16,8 @@
 
 ## 直近のコミット
 
-- `087dd75`
-- message: `update app copy`
+- `27fb6eb`
+- message: `add gpu interpolation pass`
 
 ## 主要な決定事項
 
@@ -153,8 +153,4 @@ GPU 実装で最初に使う候補:
 - `npm run build` は通過済み
 - `npm run lint` は通過済み
 - `public/data/world.geojson` は今回の表示切り替え対象
-- 未コミット変更:
-  - [mockObservations.js](/home/shimizu/_playground/three-fiber/r3f-webgpu-template/src/data/mockObservations.js): 全世界ランダム配置 + 速度倍率 `1..4`
-  - [MovingEntitiesLayer.jsx](/home/shimizu/_playground/three-fiber/r3f-webgpu-template/src/layers/MovingEntitiesLayer.jsx): loop duration を `6` 秒へ短縮
-  - [createInterpolationPass.js](/home/shimizu/_playground/three-fiber/r3f-webgpu-template/src/compute/createInterpolationPass.js): 未コミットの新規ファイル
-- 次回はまず未コミット分をどう扱うか確認し、その後に world 表示の確認か補間仕様調整から再開する
+- 次回は world 表示の確認か、Interpolation Pass の補間仕様調整から再開する
