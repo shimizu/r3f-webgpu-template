@@ -16,8 +16,8 @@
 
 ## 直近のコミット
 
-- `27fb6eb`
-- message: `add gpu interpolation pass`
+- `33da91f`
+- message: `update working memory`
 
 ## 主要な決定事項
 
@@ -110,6 +110,7 @@ GPU 実装で最初に使う候補:
 - UI の件数プリセットには `500000` と `1000000` を追加済み
 - control panel の説明文は、ComputeShader で緯度経度から画面座標へ変換する実験内容に合わせて更新済み
 - `reference/observation-buffer.md` に buffer layout メモを追加した
+- `src/Scene.jsx` と `src/compute/*` には入門者向けの解説コメントを追加中
 - トレイル、風場、LOD はまだ未実装
 - `plan.md` は GPU First 方針に更新済み
 - `task.md` は実装タスク分解済み
@@ -153,4 +154,10 @@ GPU 実装で最初に使う候補:
 - `npm run build` は通過済み
 - `npm run lint` は通過済み
 - `public/data/world.geojson` は今回の表示切り替え対象
+- 未コミット変更:
+  - [Scene.jsx](/home/shimizu/_playground/three-fiber/r3f-webgpu-template/src/Scene.jsx): シーン構成と HUD の入門者向けコメントを追加
+  - [createInterpolationPass.js](/home/shimizu/_playground/three-fiber/r3f-webgpu-template/src/compute/createInterpolationPass.js): GPU 補間と投影の流れを説明するコメントを追加
+  - [createProjectionPass.js](/home/shimizu/_playground/three-fiber/r3f-webgpu-template/src/compute/createProjectionPass.js): projection pass の入力/出力と compute の流れを説明するコメントを追加
+  - [observationLayout.js](/home/shimizu/_playground/three-fiber/r3f-webgpu-template/src/compute/observationLayout.js): observation buffer layout の説明コメントを追加
+  - [runBarsCompute.js](/home/shimizu/_playground/three-fiber/r3f-webgpu-template/src/compute/runBarsCompute.js): 初期速度・寿命 seed の役割説明を追加
 - 次回は world 表示の確認か、Interpolation Pass の補間仕様調整から再開する

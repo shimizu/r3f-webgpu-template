@@ -62,11 +62,15 @@ import {
 const WORKGROUP_SIZE = 64
 const BOUNDS_PADDING = 1.25
 
+// CPU 側で使う簡単な疑似乱数。
+// シード値が同じなら毎回同じ値になるので、初期速度や寿命を再現可能に作れる。
 function hash01(value) {
   const x = Math.sin(value * 12.9898) * 43758.5453
   return x - Math.floor(x)
 }
 
+// 粒子ごとの初期速度ベクトルを作る。
+// 入力座標そのものは変えず、別バッファに「最初の進行方向」だけを用意する。
 function createVelocitySeed(inputValues) {
   const particleCount = inputValues.length / 3
   const velocities = new Float32Array(inputValues.length)
@@ -90,6 +94,8 @@ function createVelocitySeed(inputValues) {
   return velocities
 }
 
+// 粒子ごとの寿命と最大寿命を初期化する。
+// 全粒子が同じタイミングで消えないよう、初期残量も少しばらけさせている。
 function createLifeSeed(inputValues) {
   const particleCount = inputValues.length / 3
   const maxLives = new Float32Array(particleCount)
