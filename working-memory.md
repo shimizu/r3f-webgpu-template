@@ -16,8 +16,8 @@
 
 ## 直近のコミット
 
-- `2e69651`
-- message: `add beginner docs comments`
+- `55e5903`
+- message: `update working memory`
 
 ## 主要な決定事項
 
@@ -60,6 +60,7 @@ CPU に残してよいもの:
 - [.codex/hooks/session_start.py](/home/shimizu/_playground/three-fiber/r3f-webgpu-template/.codex/hooks/session_start.py)
 - [.codex/hooks/stop_working_memory_check.py](/home/shimizu/_playground/three-fiber/r3f-webgpu-template/.codex/hooks/stop_working_memory_check.py)
 - [reference/projection.md](/home/shimizu/_playground/three-fiber/r3f-webgpu-template/reference/projection.md)
+- [docs/gpu-gis-particle-architecture.md](/home/shimizu/_playground/three-fiber/r3f-webgpu-template/docs/gpu-gis-particle-architecture.md)
 - [src/Scene.jsx](/home/shimizu/_playground/three-fiber/r3f-webgpu-template/src/Scene.jsx)
 - [src/compute/runBarsCompute.js](/home/shimizu/_playground/three-fiber/r3f-webgpu-template/src/compute/runBarsCompute.js)
 
@@ -111,6 +112,7 @@ GPU 実装で最初に使う候補:
 - control panel の説明文は、ComputeShader で緯度経度から画面座標へ変換する実験内容に合わせて更新済み
 - `reference/observation-buffer.md` に buffer layout メモを追加した
 - `src/Scene.jsx` と `src/compute/*` に入門者向けの解説コメントを追加済み
+- `docs/gpu-gis-particle-architecture.md` に、現行アーキテクチャ、データフロー、実データを GPU へ渡す方法の入門者向け解説を追加した
 - トレイル、風場、LOD はまだ未実装
 - `plan.md` は GPU First 方針に更新済み
 - `task.md` は実装タスク分解済み
@@ -154,4 +156,6 @@ GPU 実装で最初に使う候補:
 - `npm run build` は通過済み
 - `npm run lint` は通過済み
 - `public/data/world.geojson` は今回の表示切り替え対象
+- 未コミット変更:
+  - [gpu-gis-particle-architecture.md](/home/shimizu/_playground/three-fiber/r3f-webgpu-template/docs/gpu-gis-particle-architecture.md): パーティクルシステムの仕組み、アーキテクチャ、拡張方針、実データの GPU 転送方法を追加
 - 次回は world 表示の確認か、Interpolation Pass の補間仕様調整から再開する
