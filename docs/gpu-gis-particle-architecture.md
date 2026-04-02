@@ -1,458 +1,366 @@
-# GPU First GIS パーティクルシステム入門
+# GPU First GIS 可視化アーキテクチャガイド
 
-このドキュメントは、このリポジトリのパーティクルシステムを入門者向けに説明するためのものです。
+本ドキュメントは、WebGPU Compute Shader を活用した GIS 可視化システムの設計パターンを解説する。対象読者は設計者・アーキテクト。
 
-対象:
+扱う範囲:
 
-- いまの実装が何をしているか知りたい
-- なぜ CPU ではなく GPU で処理しているのか知りたい
-- 将来的にランダム粒子ではなく、緯度経度を持つ実データセットへ差し替えたい
-- そのときに CPU から GPU へどうデータを渡せばよいか知りたい
+- GPU-first で大量の地理エンティティを可視化するための設計思想
+- CPU/GPU 間のデータレイアウトと責務分離
+- GPU 上での地理座標投影と時間ベース補間の設計パターン
+- 実データ対応と将来拡張に向けた設計指針
 
-## 1. まず全体像
+---
 
-このプロジェクトは、単なる見た目の粒子デモではなく、GPU First な GIS 可視化基盤を目指しています。
+## 1. GPU-first GIS の設計思想
 
-考え方はかなり明確です。
+大量の移動体（船舶、航空機、車両など）をリアルタイムに地図上へ描画する場合、CPU で 1 件ずつ座標変換や補間を行う方式はスケールしない。件数が数千〜数万に達すると、JavaScript のメインスレッドがボトルネックになり、フレームレートが維持できなくなる。
 
-- CPU は受信、最小限のパッキング、UI 制御を担当する
-- GPU は投影、補間、位置更新、将来のトレイルや風場粒子を担当する
-- 大量データを JavaScript のオブジェクト配列として毎フレームこね回さない
+GPU-first の設計では、責務を次のように分離する。
 
-つまり「CPU で座標を全部計算してから描画する」のではなく、「CPU はデータを GPU に渡し、GPU が大量件数をまとめて処理する」構造です。
+**CPU の責務:**
 
-## 2. 現在のアーキテクチャ
+- 外部データの受信と JSON パース
+- 欠損値の除去と単位の正規化
+- typed array へのパッキング
+- UI 制御（再生速度、表示切替など）
 
-現在の主要ファイルは次のとおりです。
+**GPU の責務:**
 
-- [src/Scene.jsx](/home/shimizu/_playground/three-fiber/r3f-webgpu-template/src/Scene.jsx)
-- [src/layers/MovingEntitiesLayer.jsx](/home/shimizu/_playground/three-fiber/r3f-webgpu-template/src/layers/MovingEntitiesLayer.jsx)
-- [src/layers/BaseMapLayer.jsx](/home/shimizu/_playground/three-fiber/r3f-webgpu-template/src/layers/BaseMapLayer.jsx)
-- [src/data/mockObservations.js](/home/shimizu/_playground/three-fiber/r3f-webgpu-template/src/data/mockObservations.js)
-- [src/compute/observationLayout.js](/home/shimizu/_playground/three-fiber/r3f-webgpu-template/src/compute/observationLayout.js)
-- [src/compute/createProjectionPass.js](/home/shimizu/_playground/three-fiber/r3f-webgpu-template/src/compute/createProjectionPass.js)
-- [src/compute/createInterpolationPass.js](/home/shimizu/_playground/three-fiber/r3f-webgpu-template/src/compute/createInterpolationPass.js)
+- 地理座標から画面座標への投影（毎フレーム）
+- 時間ベースの線形補間（毎フレーム）
+- 将来的なトレイル更新、ベクトル場粒子の移流
 
-大まかな流れはこうです。
+「CPU で座標を全部計算してから描画する」方式を避ける理由は明快で、件数 N に対して毎フレーム O(N) の JavaScript ループが走ることになり、GC 圧力とメインスレッド占有が同時に発生するためである。GPU であれば数万件の並列処理を 1 回の dispatch で完了できる。
 
-1. `Scene.jsx` が背景地図と移動体レイヤーを表示する
-2. `MovingEntitiesLayer.jsx` が観測データを受け取り、compute pass を初期化する
-3. `mockObservations.js` が観測データを `Float32Array` として作る
-4. `createInterpolationPass.js` が GPU 上で補間と投影を実行する
-5. `InstancedMesh` が compute 結果の位置バッファをそのまま読んで描画する
+---
 
-重要なのは、描画直前の位置を CPU が 1 件ずつ計算していないことです。
+## 2. Stride ベースの観測データレイアウト設計
 
-## 3. なぜ typed array を使うのか
+### なぜ typed array を使うのか
 
-GPU に大量データを渡すとき、JavaScript の配列やオブジェクトのままでは扱いづらく、無駄も多くなります。
-
-例えば次のような配列は、人間には読みやすいですが GPU 向きではありません。
+GPU に大量データを渡す場合、JavaScript のオブジェクト配列は適さない。
 
 ```js
+// 人間には読みやすいが GPU 向きではない
 [
   { lon: 139.76, lat: 35.68, speed: 12.4 },
   { lon: 140.01, lat: 35.55, speed: 9.1 },
 ]
 ```
 
-GPU に渡したいのは、むしろ次のような連続した数値配列です。
+オブジェクト配列の問題点:
+
+- プロパティアクセスのたびにハッシュ探索が発生する
+- メモリが連続していないため GPU へ一括転送できない
+- GC 対象のオブジェクトが大量に生まれる
+
+`Float32Array` であれば、メモリ上で連続した数値列として GPU バッファへ直接マッピングできる。
+
+### STRIDE + OFFSET パターン
+
+1 エンティティあたりのフィールド数を定数 `STRIDE` として定義し、各フィールドの位置を `OFFSET` オブジェクトで管理する。この定数を CPU 側のパッキングコードと GPU 側の読み出しコードの双方で共有することで、レイアウトの不整合を防ぐ。
 
 ```js
-Float32Array([
-  lon0, lat0, alt0, timestamp0, prevLon0, prevLat0, prevAlt0, prevTimestamp0, speed0, heading0, type0, status0,
-  lon1, lat1, alt1, timestamp1, prevLon1, prevLat1, prevAlt1, prevTimestamp1, speed1, heading1, type1, status1,
-])
-```
-
-この方式の利点:
-
-- メモリ上で連続しているので GPU へ渡しやすい
-- レコード幅が固定なので compute shader から読みやすい
-- CPU 側の余計なオブジェクト処理を減らせる
-
-## 4. 現在の観測データレイアウト
-
-[src/compute/observationLayout.js](/home/shimizu/_playground/three-fiber/r3f-webgpu-template/src/compute/observationLayout.js) では、1 レコードのレイアウトを固定しています。
-
-現在の構造:
-
-- `lon`
-- `lat`
-- `alt`
-- `timestamp`
-- `prevLon`
-- `prevLat`
-- `prevAlt`
-- `prevTimestamp`
-- `speed`
-- `heading`
-- `type`
-- `status`
-
-`OBSERVATION_STRIDE = 12` なので、1 エンティティあたり 12 個の `float` を使います。
-
-compute shader は `instanceIndex * OBSERVATION_STRIDE` を基準にして、このレコードを読み出します。
-
-## 5. 現在の描画フロー
-
-### 5-1. CPU 側
-
-CPU 側の役割はかなり小さいです。
-
-- 件数を決める
-- モック観測データを作る
-- view 情報を渡す
-- 再生時刻 `playbackTime` を更新する
-
-### 5-2. GPU 側
-
-GPU 側では主に次をやっています。
-
-- `prevLon/prevLat` と `lon/lat` の線形補間
-- view 中心からの差分計算
-- ラジアン変換
-- equirectangular ベースの簡易投影
-- world 座標への書き込み
-
-### 5-3. 描画側
-
-描画側では `InstancedMesh` が compute 結果を直接読みます。
-
-- 各インスタンスの位置は `system.positionNode.element(instanceIndex)` を使う
-- billboard 化して常にカメラを向かせる
-- 色は type に応じて切り替える
-
-この構造だと、CPU が毎フレーム `mesh.position.set(...)` を大量件数ぶん呼ぶ必要がありません。
-
-## 6. Projection Pass と Interpolation Pass の役割分担
-
-### Projection Pass
-
-[src/compute/createProjectionPass.js](/home/shimizu/_playground/three-fiber/r3f-webgpu-template/src/compute/createProjectionPass.js) は、観測点をそのまま投影したいときの基礎です。
-
-役割:
-
-- `lon/lat` を読む
-- view 中心との差分を取る
-- 経度の折り返しを処理する
-- `worldX/worldY/worldZ` を計算する
-
-### Interpolation Pass
-
-[src/compute/createInterpolationPass.js](/home/shimizu/_playground/three-fiber/r3f-webgpu-template/src/compute/createInterpolationPass.js) は、現在の移動体表示で使っている中核 pass です。
-
-役割:
-
-- `prevTimestamp -> timestamp` の間の進行率を計算する
-- `prevLon/prevLat` と `lon/lat` を補間する
-- 補間後の位置を投影する
-
-つまり現在の移動体表示は、「補間してから投影する」を 1 つの compute pass でやっています。
-
-## 7. 実データへ拡張するときの基本方針
-
-今後、ランダム粒子ではなく、実際の緯度経度を持ったデータセットを元に動かすことになります。
-
-そのときの原則は次です。
-
-- CPU で 1 件ずつ投影しない
-- CPU で 1 件ずつ毎フレーム補間しない
-- まずデータを packed buffer にする
-- packed buffer を GPU に渡す
-- 補間と投影は GPU で行う
-
-つまり、実データになっても「CPU 側でやることが増える」のではなく、「CPU の入力生成が mock から real data に変わるだけ」という形に寄せるのが理想です。
-
-## 8. 緯度経度データセットを GPU に渡す方法
-
-ここが今後もっとも重要になります。
-
-### 推奨の流れ
-
-1. 外部データを受信する
-2. 必要な項目だけ抽出する
-3. `Float32Array` または `Uint32Array` に詰める
-4. それを `StorageBufferAttribute` に載せる
-5. compute pass で読む
-
-### CPU 側で保持したい形
-
-実データを受け取った直後は JSON でもかまいませんが、長くそのまま持たない方がよいです。
-
-例えば入力がこうだとします。
-
-```js
-const rows = [
-  {
-    id: 'ship-001',
-    lon: 139.76,
-    lat: 35.61,
-    timestamp: 1710000060,
-    speed: 14.2,
-    heading: 93,
-    type: 'vessel',
-  },
-]
-```
-
-これを描画直前までオブジェクトで持ち続けるのではなく、早い段階で buffer 化します。
-
-```js
-const rawObservationBuffer = new Float32Array(entityCount * OBSERVATION_STRIDE)
-```
-
-そして 1 レコードずつ決められた offset に詰めます。
-
-```js
-rawObservationBuffer[baseIndex + OBSERVATION_OFFSET.lon] = row.lon
-rawObservationBuffer[baseIndex + OBSERVATION_OFFSET.lat] = row.lat
-rawObservationBuffer[baseIndex + OBSERVATION_OFFSET.timestamp] = row.timestamp
-rawObservationBuffer[baseIndex + OBSERVATION_OFFSET.prevLon] = prevRow.lon
-rawObservationBuffer[baseIndex + OBSERVATION_OFFSET.prevLat] = prevRow.lat
-rawObservationBuffer[baseIndex + OBSERVATION_OFFSET.prevTimestamp] = prevRow.timestamp
-rawObservationBuffer[baseIndex + OBSERVATION_OFFSET.speed] = row.speed
-rawObservationBuffer[baseIndex + OBSERVATION_OFFSET.heading] = row.heading
-rawObservationBuffer[baseIndex + OBSERVATION_OFFSET.type] = typeCode
-rawObservationBuffer[baseIndex + OBSERVATION_OFFSET.status] = statusCode
-```
-
-ここで大事なのは、CPU が「投影後座標」を入れるのではなく、「生の地理座標」を入れることです。
-
-## 9. 実データに切り替えるときに必要な最小項目
-
-最低限、次の情報があると GPU 補間に移行しやすいです。
-
-- `lon`
-- `lat`
-- `timestamp`
-- `prevLon`
-- `prevLat`
-- `prevTimestamp`
-
-高度や見た目制御もしたいなら、さらに次を持たせます。
-
-- `alt`
-- `prevAlt`
-- `speed`
-- `heading`
-- `type`
-- `status`
-
-## 10. prev/current 形式にする理由
-
-GPU 補間を使いたいなら、単一時点だけでは足りません。
-
-例えば次の 2 点が必要です。
-
-- 前回観測
-- 現在観測
-
-その 2 点と時刻を持っていれば、GPU は次のように補間できます。
-
-- `blend = (playbackTime - prevTimestamp) / (timestamp - prevTimestamp)`
-- `lon = mix(prevLon, lon, blend)`
-- `lat = mix(prevLat, lat, blend)`
-
-つまり、CPU が毎フレーム「この船はいまここ」と計算しなくても、GPU が再生時刻に応じて位置を出せます。
-
-## 11. 実運用データでの CPU 側パッキング戦略
-
-実データでは、ソースから受け取る形式がまちまちです。ですが GPU へ渡す前の形は固定した方がよいです。
-
-おすすめは、CPU 側で次の 2 段階に分けることです。
-
-### 段階 1: 受信と正規化
-
-- API やファイルからデータを読む
-- 項目名の違いを吸収する
-- 座標や時刻の欠損を弾く
-- 型を数値へそろえる
-
-### 段階 2: packed buffer 化
-
-- エンティティ数を確定する
-- `Float32Array` を必要サイズで 1 回確保する
-- offset に従って連続書き込みする
-
-この構造にすると、データソースが変わっても GPU 側の pass はほぼ変えずに済みます。
-
-## 12. どのデータを Float32Array に入れるべきか
-
-原則として、compute shader で大量に読む数値は typed array 化します。
-
-`Float32Array` に向くもの:
-
-- `lon`
-- `lat`
-- `alt`
-- `timestamp`
-- `speed`
-- `heading`
-
-数値コード化して `Float32Array` に入れてもよいもの:
-
-- `type`
-- `status`
-
-将来的に分離を検討してよいもの:
-
-- `id`
-- 表示名
-- IMO 番号や flight number のような文字列
-
-文字列や詳細属性は、選択 UI 用に CPU 側の辞書として別保持する方がよいです。
-
-## 13. GPU に渡すときの実装イメージ
-
-今の構造に沿うなら、実データ導入時の入口は `createMockObservationBuffer` の差し替えです。
-
-いま:
-
-- `createMockObservationBuffer(entityCount)` がランダム観測を返す
-
-将来:
-
-- `createObservationBufferFromDataset(rows)` が実データを返す
-
-イメージ:
-
-```js
-export function createObservationBufferFromDataset(rows) {
-  const entityCount = rows.length
-  const rawObservationBuffer = new Float32Array(entityCount * OBSERVATION_STRIDE)
-
-  for (let index = 0; index < entityCount; index += 1) {
-    const row = rows[index]
-    const prev = row.prev
-    const baseIndex = index * OBSERVATION_STRIDE
-
-    rawObservationBuffer[baseIndex + OBSERVATION_OFFSET.lon] = row.lon
-    rawObservationBuffer[baseIndex + OBSERVATION_OFFSET.lat] = row.lat
-    rawObservationBuffer[baseIndex + OBSERVATION_OFFSET.alt] = row.alt ?? 0
-    rawObservationBuffer[baseIndex + OBSERVATION_OFFSET.timestamp] = row.timestamp
-    rawObservationBuffer[baseIndex + OBSERVATION_OFFSET.prevLon] = prev.lon
-    rawObservationBuffer[baseIndex + OBSERVATION_OFFSET.prevLat] = prev.lat
-    rawObservationBuffer[baseIndex + OBSERVATION_OFFSET.prevAlt] = prev.alt ?? 0
-    rawObservationBuffer[baseIndex + OBSERVATION_OFFSET.prevTimestamp] = prev.timestamp
-    rawObservationBuffer[baseIndex + OBSERVATION_OFFSET.speed] = row.speed ?? 0
-    rawObservationBuffer[baseIndex + OBSERVATION_OFFSET.heading] = row.heading ?? 0
-    rawObservationBuffer[baseIndex + OBSERVATION_OFFSET.type] = encodeType(row.type)
-    rawObservationBuffer[baseIndex + OBSERVATION_OFFSET.status] = encodeStatus(row.status)
-  }
-
-  return {
-    entityCount,
-    rawObservationBuffer,
-  }
+const OBSERVATION_STRIDE = 12
+const OBSERVATION_OFFSET = {
+  lon: 0, lat: 1, alt: 2, timestamp: 3,
+  prevLon: 4, prevLat: 5, prevAlt: 6, prevTimestamp: 7,
+  speed: 8, heading: 9, type: 10, status: 11,
 }
 ```
 
-この形にしておけば、`MovingEntitiesLayer.jsx` 側では mock か real data かをあまり意識せずに扱えます。
+バッファの物理的な並びは次のようになる。
 
-## 14. どこまで CPU でやってよいか
+```
+[entity0: lon, lat, alt, ts, pLon, pLat, pAlt, pTs, spd, hdg, type, status,
+ entity1: lon, lat, alt, ts, pLon, pLat, pAlt, pTs, spd, hdg, type, status,
+ ...]
+```
 
-CPU に残してよいもの:
+### 整数値を float としてパックする理由
 
-- データ受信
-- JSON パース
-- 欠損除去
-- 単位変換
+`type` や `status` のような整数カテゴリ値も `Float32Array` に格納する。これは GPU 側で読み出すバッファを 1 本に統一し、stride ベースのアクセスを崩さないためである。Float32 は整数として 2^24 まで正確に表現できるため、カテゴリコードには十分な精度がある。
+
+---
+
+## 3. GPU 上での地理座標投影パターン
+
+### 等距円筒図法の GPU 実装
+
+等距円筒図法（Equirectangular Projection）は、経度・緯度をそのまま x・y にマッピングする最もシンプルな地図投影法である。GPU 上で実装する場合の手順は次のとおり。
+
+1. 経度・緯度を度からラジアンへ変換する
+2. view 中心座標との差分を取る
+3. 経度方向に `cos(centerLat)` を掛けて高緯度での歪みを補正する
+4. ワールドスケールを掛けて画面座標にする
+
+```js
+function createProjectedNode(lonNode, latNode, worldScaleNode, centerLonNode, centerLatNode, cosCenterLatNode) {
+  const lambda = lonNode.sub(centerLonNode).mul(DEG2RAD).toVar()
+  const phi = latNode.sub(centerLatNode).mul(DEG2RAD).toVar()
+  const wrappedPositive = select(lambda.greaterThan(float(PI)), lambda.sub(float(TAU)), lambda).toVar()
+  const wrappedLambda = select(wrappedPositive.lessThan(float(-PI)), wrappedPositive.add(float(TAU)), wrappedPositive).toVar()
+  return vec3(
+    wrappedLambda.mul(cosCenterLatNode).mul(worldScaleNode),
+    phi.mul(worldScaleNode),
+    float(0)
+  )
+}
+```
+
+### 日付変更線ラッピング
+
+経度差分 `lambda` が `-PI..PI` の範囲を超える場合、日付変更線を跨いでいる。`select` パターンで `TAU` を加減算し、最短経路側に正規化する。これにより、太平洋上の移動体が地図の端から端へワープする問題を防げる。
+
+### cos(centerLat) の事前計算
+
+`cos(centerLat)` は view 中心が変わらない限り定数である。毎フレーム GPU 側で三角関数を計算するのではなく、CPU 側で事前に算出して uniform として渡す方が効率的である。
+
+### CPU/GPU 投影の数式統一
+
+ピッキング（マウス座標 → 地理座標の逆変換）やデバッグ表示で CPU 側にも投影関数が必要になることがある。このとき、CPU 側と GPU 側で同じ数式を使うことが重要である。数式が乖離すると、「CPU で計算した座標と GPU の描画位置がずれる」という追跡困難なバグが発生する。
+
+---
+
+## 4. GPU 上での時間ベース線形補間パターン
+
+### prev/current 2 点保持の必要性
+
+GPU で移動体の中間位置を算出するには、少なくとも前回観測と現在観測の 2 点が必要である。単一時点のスナップショットだけでは、フレーム間の滑らかな移動を GPU 側で生成できない。
+
+2 点の時刻と座標があれば、任意の再生時刻に対する内挿位置を GPU が自律的に計算できる。CPU が毎フレーム「この船はいまここ」と伝える必要がなくなる。
+
+### 補間の計算フロー
+
+1. `playbackTime` を `loopDuration` で正規化し、再生全体における進行率を得る
+2. 正規化した進行率から、各エンティティの `prevTimestamp`〜`timestamp` 間でのブレンド率を算出する
+3. `mix()` で経度・緯度を線形補間する
+
+```js
+const normalizedPlayback = playbackTimeNode.div(loopDurationNode).toVar()
+const playbackTimestamp = mix(prevTimestamp, timestamp, normalizedPlayback).toVar()
+const timestampSpan = timestamp.sub(prevTimestamp).toVar()
+const blend = clamp(
+  playbackTimestamp.sub(prevTimestamp).div(timestampSpan),
+  float(0), float(1)
+).toVar()
+const currentLon = mix(prevLon, lon, blend).toVar()
+const currentLat = mix(prevLat, lat, blend).toVar()
+```
+
+`clamp(0, 1)` により、タイムスタンプ範囲外の外挿を防止している。
+
+### 補間 → 投影のワンパス実行
+
+補間で得た `currentLon / currentLat` をそのまま投影関数に渡すことで、「補間 → 投影」を 1 回の compute dispatch で完了できる。中間結果を一度バッファに書き戻して再読み込みする必要がないため、メモリ帯域を節約できる。
+
+---
+
+## 5. Projection Pass と Interpolation Pass の分離設計
+
+用途に応じて compute pass を使い分ける設計が有効である。
+
+### Projection Pass
+
+静的な観測点（センサー設置位置、港湾、空港など）をそのまま投影する pass。補間は行わない。
+
+処理内容:
+
+- バッファから `lon / lat` を読む
+- view 中心との差分を計算する
+- 日付変更線ラッピングを適用する
+- ワールド座標を出力する
+
+### Interpolation Pass
+
+移動体の補間と投影を 1 パスで実行する pass。
+
+処理内容:
+
+- バッファから `prevLon / prevLat / prevTimestamp` と `lon / lat / timestamp` を読む
+- 再生時刻に基づくブレンド率を計算する
+- 経度・緯度を線形補間する
+- 補間後の座標を投影してワールド座標を出力する
+
+### 選択指針
+
+| ユースケース | 適切な pass |
+|---|---|
+| 固定地点の表示（観測所、基地局など） | Projection Pass |
+| 移動体のリアルタイム追跡 | Interpolation Pass |
+| 過去軌跡の再生 | Interpolation Pass |
+| ヒートマップ用の静的点群 | Projection Pass |
+
+GPU 側のバッファ読み出しは、いずれの pass でも同じ stride ベースのパターンを使う。
+
+```js
+const baseIndex = int(instanceIndex).mul(int(OBSERVATION_STRIDE)).toVar()
+const lon = rawObservationNode.element(baseIndex.add(int(OBSERVATION_OFFSET.lon))).toVar()
+const lat = rawObservationNode.element(baseIndex.add(int(OBSERVATION_OFFSET.lat))).toVar()
+```
+
+---
+
+## 6. 実データへの拡張パターン
+
+### CPU 側パッキング戦略
+
+実データ導入時の CPU 側処理は、次の 2 段階に分離する。
+
+**段階 1: 受信と正規化**
+
+- API やファイルからデータを受信する
+- 項目名の違いを吸収する（`longitude` → `lon` など）
+- 座標や時刻の欠損を弾く
+- 型を数値へ統一する
+
+**段階 2: packed buffer 化**
+
+- エンティティ数を確定する
+- `Float32Array` を必要サイズで 1 回確保する
+- STRIDE + OFFSET に従って連続書き込みする
+
+```js
+function packObservationBuffer(rows) {
+  const entityCount = rows.length
+  const buffer = new Float32Array(entityCount * OBSERVATION_STRIDE)
+  for (let i = 0; i < entityCount; i++) {
+    const row = rows[i]
+    const base = i * OBSERVATION_STRIDE
+    buffer[base + OBSERVATION_OFFSET.lon] = row.lon
+    buffer[base + OBSERVATION_OFFSET.lat] = row.lat
+    buffer[base + OBSERVATION_OFFSET.alt] = row.alt ?? 0
+    buffer[base + OBSERVATION_OFFSET.timestamp] = row.timestamp
+    buffer[base + OBSERVATION_OFFSET.prevLon] = row.prev.lon
+    buffer[base + OBSERVATION_OFFSET.prevLat] = row.prev.lat
+    buffer[base + OBSERVATION_OFFSET.prevAlt] = row.prev.alt ?? 0
+    buffer[base + OBSERVATION_OFFSET.prevTimestamp] = row.prev.timestamp
+    buffer[base + OBSERVATION_OFFSET.speed] = row.speed ?? 0
+    buffer[base + OBSERVATION_OFFSET.heading] = row.heading ?? 0
+    buffer[base + OBSERVATION_OFFSET.type] = encodeType(row.type)
+    buffer[base + OBSERVATION_OFFSET.status] = encodeStatus(row.status)
+  }
+  return { entityCount, rawObservationBuffer: buffer }
+}
+```
+
+この構造にしておけば、データソースが mock から実データに変わっても、GPU 側の compute pass は一切変更不要である。
+
+### mock から real data への切り替え設計
+
+切り替えの理想形は、パッキング関数の差し替えだけで完了する構造である。mock 用と実データ用のパッキング関数が同じ出力型（`{ entityCount, rawObservationBuffer }`)を返すようにしておけば、下流の compute pass 初期化コードは共通化できる。
+
+### Float32Array に入れるべきデータ / CPU 側辞書に分離すべきデータ
+
+**Float32Array に入れるもの:**
+
+- 毎フレーム GPU が読む数値: `lon`, `lat`, `alt`, `timestamp`, `speed`, `heading`
+- 整数コード化した分類値: `type`, `status`
+
+**CPU 側辞書に分離するもの:**
+
+- 文字列 ID（船名、便名など）
+- 表示用ラベル
+- 詳細属性（IMO 番号、運航会社名など）
+- 選択 UI 用のメタデータ
+
+GPU は文字列を扱う場所ではない。描画に直接必要な数値だけをバッファに載せ、UI 表示用の情報は CPU 側で別管理する。
+
+### 最低限必要な項目
+
+GPU 補間に移行するための最小フィールドセットは次の 6 項目である。
+
+- `lon`, `lat`, `timestamp`（現在観測）
+- `prevLon`, `prevLat`, `prevTimestamp`（前回観測）
+
+高度、速度、見た目制御が必要な場合は `alt`, `prevAlt`, `speed`, `heading`, `type`, `status` を追加する。
+
+---
+
+## 7. CPU/GPU 責務分離の判断基準
+
+### CPU に残してよいもの
+
+- データ受信と JSON パース
+- 欠損値の除去
+- 単位変換（秒 → ミリ秒の統一など）
 - typed array へのパッキング
-- UI 制御
+- UI 制御（再生・停止、速度変更、表示フィルタ）
 
-CPU に寄せない方がよいもの:
+### GPU に寄せるべきもの
 
-- 毎フレームの個体補間
-- 毎フレームの `lon/lat -> screen` 変換
-- 毎フレームのトレイル更新
-- ベクトル場粒子の移流
+- 毎フレームの個体補間（N 件 × 毎フレーム）
+- `lon/lat` → 画面座標変換（N 件 × 毎フレーム）
+- トレイル更新（N 件 × 履歴長 × 毎フレーム）
+- ベクトル場粒子の移流（粒子数 × 毎フレーム）
 
-ここを曖昧にすると、件数が増えたときにすぐ CPU ボトルネックへ戻ります。
+### 境界を曖昧にした場合のリスク
 
-## 15. 実データ対応で気をつけること
+「とりあえず CPU で補間して position を set する」方式は、件数が少ないうちは問題なく動作する。しかし件数が増えたとき、次の問題が同時に発生する。
+
+- メインスレッドの JavaScript ループが 16ms を超える
+- `mesh.position.set()` の呼び出し回数に比例して CPU 時間が増加する
+- GC がフレーム中に走り、スパイクが発生する
+
+この境界を最初から明確にしておけば、件数が 10 倍になっても GPU 側の dispatch 回数は変わらず、CPU 側の負荷は定数的に維持される。
+
+---
+
+## 8. 実データ対応時の注意点
 
 ### 時刻の単位をそろえる
 
-`timestamp` と `prevTimestamp` は、同じ単位で入れる必要があります。
+`timestamp` と `prevTimestamp` は同じ単位でバッファに格納する必要がある。秒とミリ秒が混在すると、補間のブレンド率が桁違いにずれ、エンティティが瞬間移動したり静止したりする。パッキング段階で統一するのが最も安全である。
 
-例えば次は避けるべきです。
+### 欠損値の CPU 側フィルタリング
 
-- `timestamp` は秒
-- `prevTimestamp` はミリ秒
+次のような値は、GPU に渡す前に CPU 側で除去または補正する。
 
-単位が混ざると補間率が壊れます。
-
-### 欠損値を放置しない
-
-次のような値は CPU 側で弾くか補正した方が安全です。
-
-- `NaN`
-- `undefined`
+- `NaN`, `undefined`
 - 緯度が `-90..90` の範囲外
 - 経度が `-180..180` の範囲外
+- `prevTimestamp` が `timestamp` より大きい（時系列の逆転）
 
-### ID と表示情報を同じバッファに詰め込みすぎない
+GPU 側の compute shader に防御コードを入れることも可能だが、条件分岐が増えると並列実行効率が下がる。入力データの品質保証は CPU 側の責務とする方が全体設計として健全である。
 
-GPU は文字列を扱う場所ではありません。
+### ID・表示情報を GPU バッファに詰め込みすぎない
 
-例えば次は分けた方がよいです。
+GPU バッファは毎フレーム compute shader が読み書きする高速メモリである。ここに描画に不要な情報を詰めると、stride が大きくなり、キャッシュ効率が低下する。
 
-- GPU バッファ: 位置、時刻、速度、種別コード
-- CPU 側辞書: ラベル、詳細情報、選択 UI 用メタデータ
+原則: GPU バッファには「毎フレームの計算に必要な数値」だけを入れる。
 
-## 16. 将来の拡張ポイント
+---
 
-このアーキテクチャは次の拡張に向いています。
+## 9. 将来の拡張ポイント
+
+以下は、この設計パターンの上に追加可能な拡張の概要である。
 
 ### GPU トレイル
 
-各移動体に固定長の履歴スロットを持たせ、位置更新のたびにリングバッファへ書き込みます。
+各エンティティに固定長の履歴スロット（リングバッファ）を持たせ、位置更新のたびに最新位置を書き込む。描画時には age（経過フレーム数）に応じてアルファをフェードさせることで、移動軌跡を表現する。
 
-必要になるもの:
+設計要素:
 
-- trail 用 storage buffer
-- trail write index
-- age ベースのフェード
+- trail 用 storage buffer（エンティティ数 × 履歴長 × vec3）
+- write index の管理（リングバッファのヘッド位置）
+- age ベースのフェード計算
 
 ### ベクトル場粒子
 
-風や海流のグリッドを別バッファまたは texture として GPU に渡し、粒子位置からサンプリングします。
+風速や海流のグリッドデータをテクスチャとして GPU に渡し、粒子位置からバイリニアサンプリングで流速を取得する。粒子は流速に従って移流し、寿命が尽きたらランダム位置にリスポーンする。
 
-必要になるもの:
+設計要素:
 
-- flow field の格子データ
-- 粒子の寿命
-- リスポーン処理
+- flow field テクスチャ（u/v 成分を RG チャンネルに格納）
+- 粒子の寿命管理と乱数によるリスポーン
+- サンプリング座標の正規化（地理座標 → テクスチャ UV）
 
 ### 集約表示
 
-ズームアウト時に個体描画を減らし、密度グリッドやセル集約へ切り替えます。
+ズームアウト時に個体描画からセル集約表示へ切り替える。compute pass でセルインデックスを計算し、セルごとのカウントや平均値を集約バッファに書き込む。
 
-必要になるもの:
+設計要素:
 
-- aggregation pass
-- cell index 計算
-- 集約結果の描画レイヤー
-
-## 17. 入門者向けの最初の拡張手順
-
-もし最初に「実データ対応」をやるなら、次の順で進めるのが安全です。
-
-1. `mockObservations.js` と同じ出力形式の `createObservationBufferFromDataset.js` を作る
-2. 小さな固定データセット 100 件程度で表示確認する
-3. `prev/current` と `timestamp` の整合を確認する
-4. mock と real data を切り替える props または loader を入れる
-5. 件数を増やして性能を確認する
-
-この順序なら、GPU 側の pass を壊さずに実データ導入を進められます。
-
-## 18. このプロジェクトで覚えておくべき一文
-
-この基盤では、
-
-`CPU はデータを整えて渡す、GPU は大量件数を計算して描画へつなぐ`
-
-という責務分離を最後まで崩さないことが重要です。
-
-実データ対応でも、やるべきことは「CPU に計算を戻す」ことではなく、「GPU が読みやすい形でデータを渡す」ことです。
+- aggregation pass（セル割り当て + atomic カウント）
+- cell index 計算（地理座標 → グリッド行列）
+- 集約結果の描画レイヤー（ヒートマップ、バブル等）
