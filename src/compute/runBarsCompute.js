@@ -61,6 +61,8 @@ import {
 // ここでは 64 要素ずつ処理する設定にしている。
 const WORKGROUP_SIZE = 64
 const BOUNDS_PADDING = 1.25
+const Y_BOUNDS_RATIO = 0.7
+const DEFAULT_DELTA = 1 / 60
 
 // CPU 側で使う簡単な疑似乱数。
 // シード値が同じなら毎回同じ値になるので、初期速度や寿命を再現可能に作れる。
@@ -113,54 +115,62 @@ function createLifeSeed(inputValues) {
   return { lives, maxLives }
 }
 
-export function createBarsComputeRunner(inputValues) {
-  // WebGPU compute は対応ブラウザでしか動かない。
-  // 先にここで弾いておくことで、後続の初期化失敗を分かりやすくしている。
-  if (!navigator.gpu) {
-    throw new Error('このブラウザは WebGPU compute に未対応です')
-  }
-
-  // inputValues は [x, y, z, x, y, z, ...] の配列なので、
-  // 総要素数を 3 で割ると粒子数になる。
-  const particleCount = inputValues.length / 3
-  const velocitySeed = createVelocitySeed(inputValues)
-  const { lives, maxLives } = createLifeSeed(inputValues)
+function createBounds(inputValues) {
   const maxBaseRadius = inputValues.reduce((maxRadius, value) => {
     return Math.max(maxRadius, Math.abs(value))
   }, 0)
-  const bounds = maxBaseRadius + BOUNDS_PADDING
 
-  // StorageBufferAttribute は GPU から読み書きできるバッファ。
-  // animatedPositionAttribute は「毎フレーム更新される位置データ」。
-  const animatedPositionAttribute = new StorageBufferAttribute(
-    inputValues.slice(),
-    3
-  )
-  const velocityAttribute = new StorageBufferAttribute(velocitySeed, 3)
-  const lifeAttribute = new StorageBufferAttribute(lives, 1)
-  const maxLifeAttribute = new StorageBufferAttribute(maxLives, 1)
+  return maxBaseRadius + BOUNDS_PADDING
+}
 
-  // storage(...) は TSL から GPU バッファを参照するためのノードを作る。
-  // compute shader の各スレッドが、自分の担当粒子の現在位置・速度・寿命を書き換える。
-  const animatedPositionNode = storage(
-    animatedPositionAttribute,
-    'vec3',
-    particleCount
-  )
-  const velocityNode = storage(velocityAttribute, 'vec3', particleCount)
-  const lifeNode = storage(lifeAttribute, 'float', particleCount)
-  const maxLifeNode = storage(maxLifeAttribute, 'float', particleCount).toReadOnly()
+function createBarsAttributes(inputValues) {
+  const particleCount = inputValues.length / 3
+  const velocitySeed = createVelocitySeed(inputValues)
+  const { lives, maxLives } = createLifeSeed(inputValues)
 
-  // uniform は CPU 側から毎フレーム更新する単一値。
-  // 今回は経過時間と delta time を渡して、
-  // 速度更新・位置更新・寿命更新を進める。
-  const timeNode = uniform(0)
-  const deltaNode = uniform(1 / 60)
-  const boundsNode = uniform(bounds)
+  return {
+    particleCount,
+    animatedPositionAttribute: new StorageBufferAttribute(inputValues.slice(), 3),
+    velocityAttribute: new StorageBufferAttribute(velocitySeed, 3),
+    lifeAttribute: new StorageBufferAttribute(lives, 1),
+    maxLifeAttribute: new StorageBufferAttribute(maxLives, 1),
+  }
+}
 
-  // Fn(() => { ... }) は TSL で compute / shader 本体を組み立てる書き方。
-  // JavaScript の見た目だが、中でやっているのは GPU 上で実行される式の構築。
-  const computeNode = Fn(() => {
+function createBarsNodes(attributes, particleCount) {
+  return {
+    animatedPositionNode: storage(
+      attributes.animatedPositionAttribute,
+      'vec3',
+      particleCount
+    ),
+    velocityNode: storage(attributes.velocityAttribute, 'vec3', particleCount),
+    lifeNode: storage(attributes.lifeAttribute, 'float', particleCount),
+    maxLifeNode: storage(attributes.maxLifeAttribute, 'float', particleCount).toReadOnly(),
+  }
+}
+
+function createBarsUniforms(bounds) {
+  return {
+    timeNode: uniform(0),
+    deltaNode: uniform(DEFAULT_DELTA),
+    boundsNode: uniform(bounds),
+  }
+}
+
+function createBarsComputeNode({
+  particleCount,
+  animatedPositionNode,
+  velocityNode,
+  lifeNode,
+  maxLifeNode,
+  timeNode,
+  deltaNode,
+  boundsNode,
+}) {
+  const yBoundsNode = boundsNode.mul(Y_BOUNDS_RATIO).toVar()
+
+  return Fn(() => {
     // instanceIndex は「今このスレッドが担当している粒子番号」。
     // 例えば 10000 粒子なら、各スレッドが 0, 1, 2... のどれかを担当する。
     const animatedPosition = animatedPositionNode.element(instanceIndex)
@@ -223,7 +233,7 @@ export function createBarsComputeRunner(inputValues) {
     // 範囲外へ出そうな軸だけ速度を反転して、箱の中で跳ね返す。
     // こうすると粒子が散りすぎず、しかも全粒子が別々に動いて見えやすい。
     const hitX = nextPosition.x.abs().greaterThan(boundsNode)
-    const hitY = nextPosition.y.abs().greaterThan(boundsNode.mul(0.7))
+    const hitY = nextPosition.y.abs().greaterThan(yBoundsNode)
     const hitZ = nextPosition.z.abs().greaterThan(boundsNode)
 
     const bouncedVelocity = vec3(
@@ -234,7 +244,7 @@ export function createBarsComputeRunner(inputValues) {
 
     const boundedPosition = vec3(
       clamp(nextPosition.x, boundsNode.negate(), boundsNode),
-      clamp(nextPosition.y, boundsNode.mul(-0.7), boundsNode.mul(0.7)),
+      clamp(nextPosition.y, yBoundsNode.negate(), yBoundsNode),
       clamp(nextPosition.z, boundsNode.negate(), boundsNode)
     ).toVar()
 
@@ -244,7 +254,7 @@ export function createBarsComputeRunner(inputValues) {
     const respawnSeed = timeNode.mul(0.31).add(idPhase.mul(41.17)).toVar()
     const respawnPosition = vec3(
       sin(respawnSeed.mul(1.3).add(idPhase.mul(3.7))).mul(boundsNode),
-      sin(respawnSeed.mul(1.9).add(idPhase.mul(7.1))).mul(boundsNode.mul(0.7)),
+      sin(respawnSeed.mul(1.9).add(idPhase.mul(7.1))).mul(yBoundsNode),
       cos(respawnSeed.mul(1.6).add(idPhase.mul(5.3))).mul(boundsNode)
     ).toVar()
     const respawnDirection = normalize(
@@ -281,6 +291,51 @@ export function createBarsComputeRunner(inputValues) {
     // ここで return は不要。
     // compute shader は「値を返す」より「バッファを書き換える」用途が中心。
   })().compute(particleCount, [WORKGROUP_SIZE])
+}
+
+export function createBarsComputeRunner(inputValues) {
+  // WebGPU compute は対応ブラウザでしか動かない。
+  // 先にここで弾いておくことで、後続の初期化失敗を分かりやすくしている。
+  if (!navigator.gpu) {
+    throw new Error('このブラウザは WebGPU compute に未対応です')
+  }
+
+  // inputValues は [x, y, z, x, y, z, ...] の配列なので、
+  // 総要素数を 3 で割ると粒子数になる。
+  const bounds = createBounds(inputValues)
+  const attributes = createBarsAttributes(inputValues)
+  const { particleCount } = attributes
+
+  // StorageBufferAttribute は GPU から読み書きできるバッファ。
+  // animatedPositionAttribute は「毎フレーム更新される位置データ」。
+  const { animatedPositionAttribute } = attributes
+
+  // storage(...) は TSL から GPU バッファを参照するためのノードを作る。
+  // compute shader の各スレッドが、自分の担当粒子の現在位置・速度・寿命を書き換える。
+  const {
+    animatedPositionNode,
+    velocityNode,
+    lifeNode,
+    maxLifeNode,
+  } = createBarsNodes(attributes, particleCount)
+
+  // uniform は CPU 側から毎フレーム更新する単一値。
+  // 今回は経過時間と delta time を渡して、
+  // 速度更新・位置更新・寿命更新を進める。
+  const { timeNode, deltaNode, boundsNode } = createBarsUniforms(bounds)
+
+  // Fn(() => { ... }) は TSL で compute / shader 本体を組み立てる書き方。
+  // JavaScript の見た目だが、中でやっているのは GPU 上で実行される式の構築。
+  const computeNode = createBarsComputeNode({
+    particleCount,
+    animatedPositionNode,
+    velocityNode,
+    lifeNode,
+    maxLifeNode,
+    timeNode,
+    deltaNode,
+    boundsNode,
+  })
   // .compute(...) で、この関数を compute 用ノードとして確定させる。
   // 第 1 引数は総処理件数、第 2 引数は workgroup サイズ。
   // つまり「particleCount 個ぶんの粒子を、64 件単位で GPU に処理させる」という意味。
