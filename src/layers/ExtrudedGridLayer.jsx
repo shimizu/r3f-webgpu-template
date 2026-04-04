@@ -1,96 +1,81 @@
-import { useLayoutEffect, useMemo, useRef } from 'react'
-import { Color, Matrix4, Quaternion, Vector3 } from 'three'
-
-const GRID_COLUMNS = 18
-const GRID_ROWS = 12
-const INSTANCE_COUNT = GRID_COLUMNS * GRID_ROWS
-const CELL_SIZE = 1.25
-const BASE_HEIGHT = 0.06
-const HEIGHT_SCALE = 4.6
-
-function hash01(value) {
-  const x = Math.sin(value * 127.1) * 43758.5453123
-  return x - Math.floor(x)
-}
-
-function createInstanceData() {
-  const position = new Vector3()
-  const quaternion = new Quaternion()
-  const scale = new Vector3()
-  const matrix = new Matrix4()
-  const warmColor = new Color('#ffd08a')
-  const hotColor = new Color('#ff6f2f')
-
-  return Array.from({ length: INSTANCE_COUNT }, (_, index) => {
-    const column = index % GRID_COLUMNS
-    const row = Math.floor(index / GRID_COLUMNS)
-    const centeredColumn = column - (GRID_COLUMNS - 1) * 0.5
-    const centeredRow = row - (GRID_ROWS - 1) * 0.5
-    const radial =
-      1 -
-      Math.min(
-        1,
-        Math.sqrt(centeredColumn ** 2 + centeredRow ** 2) /
-          Math.sqrt((GRID_COLUMNS * 0.5) ** 2 + (GRID_ROWS * 0.5) ** 2)
-      )
-    const noise = hash01(column * 0.91 + row * 1.73)
-    const ridge = Math.max(
-      0,
-      Math.sin((column + 1) * 0.52) * Math.cos((row + 2) * 0.43)
-    )
-    const height =
-      BASE_HEIGHT + (radial * 0.55 + noise * 0.2 + ridge * 0.25) * HEIGHT_SCALE
-
-    position.set(
-      centeredColumn * CELL_SIZE,
-      centeredRow * CELL_SIZE,
-      height * 0.5 + 0.08
-    )
-    scale.set(0.82, 0.82, height)
-    matrix.compose(position, quaternion, scale)
-
-    return {
-      matrix: matrix.clone(),
-      color: warmColor.clone().lerp(hotColor, Math.min(1, height / HEIGHT_SCALE)),
-    }
-  })
-}
+const MATERIAL_SAMPLES = [
+  {
+    position: [-7.4, 0, 1.45],
+    material: {
+      color: '#8faece',
+      roughness: 0.9,
+      metalness: 0.02,
+      clearcoat: 0.02,
+      clearcoatRoughness: 0.3,
+    },
+  },
+  {
+    position: [-3.7, 0, 1.45],
+    material: {
+      color: '#88a6c8',
+      roughness: 0.22,
+      metalness: 0.04,
+      clearcoat: 0.82,
+      clearcoatRoughness: 0.04,
+    },
+  },
+  {
+    position: [0, 0, 1.45],
+    material: {
+      color: '#6a6e73',
+      roughness: 0.18,
+      metalness: 1,
+      clearcoat: 0.22,
+      clearcoatRoughness: 0.08,
+    },
+  },
+  {
+    position: [3.7, 0, 1.45],
+    material: {
+      color: '#8f7457',
+      roughness: 0.16,
+      metalness: 1,
+      clearcoat: 0.24,
+      clearcoatRoughness: 0.07,
+    },
+  },
+  {
+    position: [7.4, 0, 1.45],
+    material: {
+      color: '#8f8f96',
+      roughness: 0.02,
+      metalness: 0,
+      transmission: 0.94,
+      thickness: 2.2,
+      transparent: true,
+      opacity: 0.32,
+      ior: 1.24,
+      attenuationDistance: 9,
+      attenuationColor: '#d8dbe2',
+      clearcoat: 0.46,
+      clearcoatRoughness: 0.02,
+    },
+  },
+]
 
 function ExtrudedGridLayer() {
-  const meshRef = useRef(null)
-  const instances = useMemo(() => createInstanceData(), [])
-
-  useLayoutEffect(() => {
-    const mesh = meshRef.current
-
-    if (!mesh) {
-      return
-    }
-
-    for (let index = 0; index < instances.length; index += 1) {
-      mesh.setMatrixAt(index, instances[index].matrix)
-      mesh.setColorAt(index, instances[index].color)
-    }
-
-    mesh.instanceMatrix.needsUpdate = true
-
-    if (mesh.instanceColor) {
-      mesh.instanceColor.needsUpdate = true
-    }
-  }, [instances])
-
   return (
-    <instancedMesh ref={meshRef} args={[null, null, INSTANCE_COUNT]} castShadow receiveShadow>
-      <boxGeometry args={[1, 1, 1]} />
-      <meshStandardMaterial
-        vertexColors
-        color='#ffb761'
-        roughness={0.36}
-        metalness={0.16}
-        emissive='#8f3b12'
-        emissiveIntensity={0.22}
-      />
-    </instancedMesh>
+    <group position={[0, 0, 0.02]}>
+      {MATERIAL_SAMPLES.map((sample, index) => {
+        return (
+          <mesh
+            key={index}
+            castShadow
+            receiveShadow
+            position={sample.position}
+            rotation={[0, index === 4 ? Math.PI * 0.22 : 0, 0]}
+          >
+            <sphereGeometry args={[1.35, 96, 96]} />
+            <meshPhysicalMaterial {...sample.material} />
+          </mesh>
+        )
+      })}
+    </group>
   )
 }
 

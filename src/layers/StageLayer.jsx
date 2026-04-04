@@ -1,117 +1,88 @@
-import { useMemo } from 'react'
-import { BufferGeometry, Float32BufferAttribute } from 'three'
+import { useLayoutEffect, useMemo, useRef } from 'react'
+import { Color, Matrix4 } from 'three'
 
-const STAGE_WIDTH = 42
-const STAGE_HEIGHT = 28
-const STAGE_THICKNESS = 1.8
-const STAGE_TOP_Z = 0.03
-const GRID_STEP = 1
-const MAJOR_GRID_STEP = 5
+const FLOOR_COLUMNS = 16
+const FLOOR_ROWS = 10
+const TILE_SIZE = 2.2
+const FLOOR_WIDTH = FLOOR_COLUMNS * TILE_SIZE
+const FLOOR_HEIGHT = FLOOR_ROWS * TILE_SIZE
 
-function createGridPositions(step, width, height) {
-  const positions = []
-  const halfWidth = width * 0.5
-  const halfHeight = height * 0.5
+function createTileData() {
+  const bright = new Color('#8f8f8f')
+  const dark = new Color('#7b7b7b')
 
-  for (let x = -halfWidth; x <= halfWidth + 0.001; x += step) {
-    positions.push(x, -halfHeight, STAGE_TOP_Z, x, halfHeight, STAGE_TOP_Z)
-  }
+  return Array.from({ length: FLOOR_COLUMNS * FLOOR_ROWS }, (_, index) => {
+    const column = index % FLOOR_COLUMNS
+    const row = Math.floor(index / FLOOR_COLUMNS)
 
-  for (let y = -halfHeight; y <= halfHeight + 0.001; y += step) {
-    positions.push(-halfWidth, y, STAGE_TOP_Z, halfWidth, y, STAGE_TOP_Z)
-  }
-
-  return positions
-}
-
-function createTickPositions(width, height) {
-  const positions = []
-  const halfWidth = width * 0.5
-  const halfHeight = height * 0.5
-
-  for (let x = -halfWidth; x <= halfWidth + 0.001; x += GRID_STEP) {
-    const tickLength = Math.abs(x % MAJOR_GRID_STEP) < 0.001 ? 0.7 : 0.38
-    positions.push(x, -halfHeight, STAGE_TOP_Z, x, -halfHeight - tickLength, STAGE_TOP_Z)
-    positions.push(x, halfHeight, STAGE_TOP_Z, x, halfHeight + tickLength, STAGE_TOP_Z)
-  }
-
-  for (let y = -halfHeight; y <= halfHeight + 0.001; y += GRID_STEP) {
-    const tickLength = Math.abs(y % MAJOR_GRID_STEP) < 0.001 ? 0.7 : 0.38
-    positions.push(-halfWidth, y, STAGE_TOP_Z, -halfWidth - tickLength, y, STAGE_TOP_Z)
-    positions.push(halfWidth, y, STAGE_TOP_Z, halfWidth + tickLength, y, STAGE_TOP_Z)
-  }
-
-  return positions
-}
-
-function createLineGeometry(positions) {
-  const geometry = new BufferGeometry()
-  geometry.setAttribute('position', new Float32BufferAttribute(positions, 3))
-  return geometry
+    return {
+      position: [
+        (column - (FLOOR_COLUMNS - 1) * 0.5) * TILE_SIZE,
+        (row - (FLOOR_ROWS - 1) * 0.5) * TILE_SIZE,
+        0.005,
+      ],
+      color: (column + row) % 2 === 0 ? bright.clone() : dark.clone(),
+    }
+  })
 }
 
 function StageLayer() {
-  const minorGridGeometry = useMemo(
-    () => createLineGeometry(createGridPositions(GRID_STEP, STAGE_WIDTH, STAGE_HEIGHT)),
-    []
-  )
-  const majorGridGeometry = useMemo(
-    () =>
-      createLineGeometry(createGridPositions(MAJOR_GRID_STEP, STAGE_WIDTH, STAGE_HEIGHT)),
-    []
-  )
-  const tickGeometry = useMemo(
-    () => createLineGeometry(createTickPositions(STAGE_WIDTH, STAGE_HEIGHT)),
-    []
-  )
+  const tileMeshRef = useRef(null)
+  const tileData = useMemo(() => createTileData(), [])
+
+  useLayoutEffect(() => {
+    const mesh = tileMeshRef.current
+    const matrix = new Matrix4()
+
+    if (!mesh) {
+      return
+    }
+
+    tileData.forEach((tile, index) => {
+      matrix.makeTranslation(tile.position[0], tile.position[1], tile.position[2])
+      mesh.setMatrixAt(index, matrix)
+      mesh.setColorAt(index, tile.color)
+    })
+
+    mesh.instanceMatrix.needsUpdate = true
+
+    if (mesh.instanceColor) {
+      mesh.instanceColor.needsUpdate = true
+    }
+  }, [tileData])
 
   return (
     <group>
-      <mesh receiveShadow position={[0, 0, -STAGE_THICKNESS * 0.5]}>
-        <boxGeometry args={[STAGE_WIDTH + 2.2, STAGE_HEIGHT + 2.2, STAGE_THICKNESS]} />
-        <meshStandardMaterial color='#2a3239' roughness={0.8} metalness={0.08} />
+      <mesh receiveShadow position={[0, 0, -0.65]}>
+        <boxGeometry args={[FLOOR_WIDTH + 0.8, FLOOR_HEIGHT + 0.8, 1.3]} />
+        <meshStandardMaterial color='#757575' roughness={0.86} metalness={0.02} />
       </mesh>
 
-      <mesh receiveShadow position={[0, 0, 0]}>
-        <boxGeometry args={[STAGE_WIDTH, STAGE_HEIGHT, 0.06]} />
-        <meshStandardMaterial color='#7e8f96' roughness={0.94} metalness={0.04} />
-      </mesh>
-
-      <mesh position={[0, 0, STAGE_TOP_Z * 0.5]}>
-        <planeGeometry args={[STAGE_WIDTH - 0.7, STAGE_HEIGHT - 0.7]} />
-        <meshStandardMaterial
-          color='#75909b'
-          roughness={0.96}
-          metalness={0.02}
-          transparent
-          opacity={0.96}
+      <instancedMesh
+        ref={tileMeshRef}
+        args={[null, null, FLOOR_COLUMNS * FLOOR_ROWS]}
+        receiveShadow
+      >
+        <boxGeometry args={[TILE_SIZE, TILE_SIZE, 0.02]} />
+        <meshPhysicalMaterial
+          vertexColors
+          color='#8a8a8a'
+          roughness={0.3}
+          metalness={0}
+          clearcoat={0.44}
+          clearcoatRoughness={0.12}
+          reflectivity={0.8}
         />
+      </instancedMesh>
+
+      <mesh receiveShadow position={[0, 0, -0.01]}>
+        <planeGeometry args={[FLOOR_WIDTH, FLOOR_HEIGHT]} />
+        <shadowMaterial transparent opacity={0.28} />
       </mesh>
 
-      <lineSegments geometry={minorGridGeometry}>
-        <lineBasicMaterial color='#8fb8c6' transparent opacity={0.18} />
-      </lineSegments>
-
-      <lineSegments geometry={majorGridGeometry}>
-        <lineBasicMaterial color='#d7fbff' transparent opacity={0.34} />
-      </lineSegments>
-
-      <lineSegments geometry={tickGeometry}>
-        <lineBasicMaterial color='#d4edf1' transparent opacity={0.52} />
-      </lineSegments>
-
-      <mesh position={[0, 0, STAGE_TOP_Z + 0.005]}>
-        <ringGeometry args={[0.38, 0.48, 48]} />
-        <meshBasicMaterial color='#ffffff' transparent opacity={0.4} />
-      </mesh>
-
-      <mesh position={[0, 0, STAGE_TOP_Z + 0.006]}>
-        <planeGeometry args={[0.9, 0.04]} />
-        <meshBasicMaterial color='#ffffff' transparent opacity={0.34} />
-      </mesh>
-      <mesh position={[0, 0, STAGE_TOP_Z + 0.006]} rotation={[0, 0, Math.PI * 0.5]}>
-        <planeGeometry args={[0.9, 0.04]} />
-        <meshBasicMaterial color='#ffffff' transparent opacity={0.34} />
+      <mesh position={[0, FLOOR_HEIGHT * 0.5 - 0.4, 4.6]} rotation={[Math.PI * 0.5, 0, 0]}>
+        <planeGeometry args={[FLOOR_WIDTH + 16, 10]} />
+        <meshStandardMaterial color='#666666' roughness={0.98} metalness={0.02} />
       </mesh>
     </group>
   )
