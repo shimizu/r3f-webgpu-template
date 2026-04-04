@@ -15,8 +15,10 @@ import {
   positionWorld,
   smoothstep,
   time,
+  vec2,
   vec3,
 } from 'three/tsl'
+import { FLOOR_HEIGHT, FLOOR_WIDTH } from './stageDimensions'
 
 const LABEL_STYLE = {
   color: '#f3f1ec',
@@ -28,8 +30,11 @@ const LABEL_STYLE = {
   pointerEvents: 'none',
 }
 
-const BOX_SIZE = 2.45
-const BOX_HALF_SIZE = BOX_SIZE * 0.5
+const WATER_BOX_WIDTH = FLOOR_WIDTH
+const WATER_BOX_HEIGHT = FLOOR_HEIGHT
+const WATER_BOX_DEPTH = 1.1
+const WATER_BOX_TOP_OFFSET = 0.04
+const WATER_BOX_CENTER = [0, 0, WATER_BOX_TOP_OFFSET + WATER_BOX_DEPTH * 0.5]
 
 function createWaterMaterial() {
   const material = new MeshPhysicalNodeMaterial({
@@ -54,21 +59,41 @@ function createWaterMaterial() {
   const secondaryNoise = mx_noise_float(
     positionWorld.mul(vec3(1.5, 1.15, 1.1)).add(vec3(time.mul(-0.16), time.mul(0.21), 0))
   ).mul(0.06)
-  const waveBands = positionLocal.y
-    .mul(4.6)
-    .sub(time.mul(1.65))
+  const warpNoise = mx_noise_float(
+    positionWorld.mul(vec3(0.34, 0.48, 0.25)).add(vec3(time.mul(0.09), time.mul(-0.05), 0))
+  ).mul(1.8)
+  const longWave = positionWorld.y
+    .mul(0.6)
+    .add(positionWorld.x.mul(0.18))
+    .add(warpNoise)
+    .sub(time.mul(0.72))
     .sin()
-    .mul(positionLocal.x.mul(7.4).add(time.mul(1.18)).sin())
-    .mul(0.08)
-  const surfaceRipple = flowNoise.add(secondaryNoise).add(waveBands)
+    .mul(0.02)
+  const diagonalWave = positionWorld.x
+    .mul(0.32)
+    .sub(positionWorld.y.mul(0.24))
+    .add(warpNoise.mul(0.7))
+    .add(time.mul(0.54))
+    .sin()
+    .mul(0.012)
+  const surfaceRipple = flowNoise.mul(0.8).add(secondaryNoise.mul(0.7)).add(longWave).add(diagonalWave)
 
-  const edgeDistance = length(positionLocal.xy).div(float(BOX_HALF_SIZE * 1.414))
+  const edgeDistance = length(
+    vec2(
+      positionLocal.x.div(float(WATER_BOX_WIDTH * 0.5)),
+      positionLocal.y.div(float(WATER_BOX_HEIGHT * 0.5))
+    )
+  )
   const edgeFactor = smoothstep(float(0.28), float(1.0), edgeDistance)
 
-  const depthTint = smoothstep(float(-BOX_HALF_SIZE), float(BOX_HALF_SIZE), positionLocal.z)
+  const depthTint = smoothstep(
+    float(-WATER_BOX_DEPTH * 0.5),
+    float(WATER_BOX_DEPTH * 0.5),
+    positionLocal.z
+  )
   const bodyColor = mix(color('#effdff'), color('#20a5ea'), depthTint)
   const depthColor = mix(bodyColor, color('#0a5ea8'), depthTint.mul(0.7).add(0.18))
-  const refractedColor = mix(depthColor, color('#7ce4ff'), surfaceRipple.add(0.12))
+  const refractedColor = mix(depthColor, color('#7ce4ff'), surfaceRipple.mul(0.75).add(0.1))
 
   const viewDirection = cameraPosition.sub(positionWorld).normalize()
   const fresnel = normalWorld
@@ -80,9 +105,9 @@ function createWaterMaterial() {
 
   const rippleNormal = normalLocal.add(
     vec3(
-      positionLocal.y.mul(8.6).sub(time.mul(1.5)).sin().mul(0.12).add(flowNoise.mul(0.45)),
-      positionLocal.x.mul(7.1).add(time.mul(1.3)).sin().mul(0.1).add(secondaryNoise.mul(0.35)),
-      surfaceRipple.mul(0.3)
+      longWave.mul(1.15).add(flowNoise.mul(0.2)),
+      diagonalWave.mul(1.25).add(secondaryNoise.mul(0.16)),
+      surfaceRipple.mul(0.12)
     )
   ).normalize()
 
@@ -105,20 +130,25 @@ function WaterBoxLayer() {
 
   return (
     <group>
-      <CubeCamera frames={1} resolution={256} position={[0, -4.7, 1.45]}>
+      <CubeCamera frames={1} resolution={256} position={WATER_BOX_CENTER}>
         {(environmentMap) => {
           material.envMap = environmentMap
 
           return (
-            <mesh castShadow receiveShadow position={[0, -4.7, 1.45]}>
-              <boxGeometry args={[BOX_SIZE, BOX_SIZE, BOX_SIZE]} />
+            <mesh castShadow receiveShadow position={WATER_BOX_CENTER}>
+              <boxGeometry args={[WATER_BOX_WIDTH, WATER_BOX_HEIGHT, WATER_BOX_DEPTH]} />
               <primitive object={material} attach='material' />
             </mesh>
           )
         }}
       </CubeCamera>
 
-      <Html position={[0, -7.25, 0.42]} center transform distanceFactor={12}>
+      <Html
+        position={[0, -(WATER_BOX_HEIGHT * 0.5) - 1.2, 0.42]}
+        center
+        transform
+        distanceFactor={12}
+      >
         <div style={LABEL_STYLE}>Water</div>
       </Html>
     </group>

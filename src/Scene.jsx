@@ -1,4 +1,4 @@
-import { OrbitControls } from '@react-three/drei'
+import { MapControls } from '@react-three/drei'
 
 import LightingRig from './LightingRig'
 import ExtrudedGridLayer from './layers/ExtrudedGridLayer'
@@ -11,7 +11,7 @@ import StageLayer from './layers/StageLayer'
      背景色、ライト、カメラ操作、舞台レイヤーを
      1 つの React コンポーネントとして並べている。
 
-  2. OrbitControls がカメラ操作を担当する
+  2. MapControls がカメラ操作を担当する
      左ドラッグで平行移動、右ドラッグで回転、ホイールでズームできるようにして、
      地図を観察しやすい操作感を用意している。
 
@@ -27,14 +27,13 @@ function Scene() {
   return (
     <>
       <color attach='background' args={['#595959']} />
-      <fog attach='fog' args={['#595959', 20, 52]} />
 
       <LightingRig />
 
       {/* カメラ操作。
           このシーンでは左ドラッグを PAN にして、
           地図を「掴んで動かす」感覚を優先している。 */}
-      <OrbitControls
+      <MapControls
         enableDamping
         minDistance={6}
         maxDistance={42}
