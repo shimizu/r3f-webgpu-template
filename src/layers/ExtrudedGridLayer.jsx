@@ -1,8 +1,9 @@
-import { CubeCamera } from '@react-three/drei'
+import { CubeCamera, Html } from '@react-three/drei'
 
 const MATERIAL_SAMPLES = [
   {
     position: [-7.4, 0, 1.45],
+    label: 'Matte',
     material: {
       color: '#8faece',
       roughness: 0.9,
@@ -13,6 +14,7 @@ const MATERIAL_SAMPLES = [
   },
   {
     position: [-3.7, 0, 1.45],
+    label: 'Semi Gloss',
     material: {
       color: '#88a6c8',
       roughness: 0.22,
@@ -23,6 +25,7 @@ const MATERIAL_SAMPLES = [
   },
   {
     position: [0, 0, 1.45],
+    label: 'Metal',
     material: {
       color: '#d9dbde',
       roughness: 0.18,
@@ -33,6 +36,7 @@ const MATERIAL_SAMPLES = [
   },
   {
     position: [3.7, 0, 1.45],
+    label: 'Mirror',
     material: {
       color: '#f3f4f6',
       roughness: 0.01,
@@ -43,6 +47,7 @@ const MATERIAL_SAMPLES = [
   },
   {
     position: [7.4, 0, 1.45],
+    label: 'Glass',
     material: {
       color: '#8f8f96',
       roughness: 0.02,
@@ -68,28 +73,73 @@ function ExtrudedGridLayer() {
       {MATERIAL_SAMPLES.map((sample, index) => {
         if (index === MIRROR_SAMPLE_INDEX) {
           return (
-            <CubeCamera key={index} frames={Infinity} resolution={256} position={sample.position}>
-              {(environmentMap) => (
-                <mesh castShadow receiveShadow position={[0, 0, 0]}>
-                  <sphereGeometry args={[1.35, 96, 96]} />
-                  <meshPhysicalMaterial {...sample.material} envMap={environmentMap} />
-                </mesh>
-              )}
-            </CubeCamera>
+            <group key={index}>
+              <CubeCamera frames={Infinity} resolution={256} position={sample.position}>
+                {(environmentMap) => (
+                  <mesh castShadow receiveShadow position={[0, 0, 0]}>
+                    <sphereGeometry args={[1.35, 96, 96]} />
+                    <meshPhysicalMaterial {...sample.material} envMap={environmentMap} />
+                  </mesh>
+                )}
+              </CubeCamera>
+
+              <Html
+                position={[sample.position[0], sample.position[1] - 2.55, 0.42]}
+                center
+                transform
+                distanceFactor={12}
+              >
+                <div
+                  style={{
+                    color: '#f3f1ec',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    letterSpacing: '0.08em',
+                    textTransform: 'uppercase',
+                    whiteSpace: 'nowrap',
+                    pointerEvents: 'none',
+                  }}
+                >
+                  {sample.label}
+                </div>
+              </Html>
+            </group>
           )
         }
 
         return (
-          <mesh
-            key={index}
-            castShadow
-            receiveShadow
-            position={sample.position}
-            rotation={[0, index === 4 ? Math.PI * 0.22 : 0, 0]}
-          >
-            <sphereGeometry args={[1.35, 96, 96]} />
-            <meshPhysicalMaterial {...sample.material} />
-          </mesh>
+          <group key={index}>
+            <mesh
+              castShadow
+              receiveShadow
+              position={sample.position}
+              rotation={[0, index === 4 ? Math.PI * 0.22 : 0, 0]}
+            >
+              <sphereGeometry args={[1.35, 96, 96]} />
+              <meshPhysicalMaterial {...sample.material} />
+            </mesh>
+
+            <Html
+              position={[sample.position[0], sample.position[1] - 2.55, 0.42]}
+              center
+              transform
+              distanceFactor={12}
+            >
+              <div
+                style={{
+                  color: '#f3f1ec',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  letterSpacing: '0.08em',
+                  textTransform: 'uppercase',
+                  whiteSpace: 'nowrap',
+                  pointerEvents: 'none',
+                }}
+              >
+                {sample.label}
+              </div>
+            </Html>
+          </group>
         )
       })}
     </group>

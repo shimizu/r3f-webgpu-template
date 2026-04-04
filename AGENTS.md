@@ -46,3 +46,11 @@ PRs should include:
 
 ## Agent-Specific Instructions
 Primary contributors are Japanese developers. Write developer-facing responses, reviews, progress updates, and repository guidance in Japanese unless a task explicitly requires another language. Keep code, filenames, commands, and API identifiers unchanged.
+
+### Material Baseline
+Treat the current five material samples in [`src/layers/ExtrudedGridLayer.jsx`](/home/shimizu/_playground/three-fiber/r3f-webgpu-template/src/layers/ExtrudedGridLayer.jsx) as the baseline lookdev library for future requests.
+
+- Left to right, the baseline labels are `Matte`, `Semi Gloss`, `Metal`, `Mirror`, `Glass`.
+- When a user gives relative material direction such as "more matte", "glossier", "more mirror-like", or "make the box feel like the glass ball", interpret that relative to these five presets first.
+- Prefer adjusting from the closest baseline preset instead of inventing a new material from scratch.
+- If a new default material language is established later, update this section and keep the preset order in sync with `ExtrudedGridLayer`.
