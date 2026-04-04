@@ -1,26 +1,29 @@
 import { MapControls } from '@react-three/drei'
 
 import LightingRig from './LightingRig'
-import ExtrudedGridLayer from './layers/ExtrudedGridLayer'
+import MaterialSamplesLayer from './layers/MaterialSamplesLayer'
 import StageLayer from './layers/StageLayer'
+import WaterBoxLayer from './layers/WaterBoxLayer'
 
 /*
   このファイルの処理の流れ
 
   1. Scene が 3D シーン全体の見た目を組み立てる
-     背景色、ライト、カメラ操作、舞台レイヤーを
+     背景色、ライト、カメラ操作、各レイヤーを
      1 つの React コンポーネントとして並べている。
 
   2. MapControls がカメラ操作を担当する
      左ドラッグで平行移動、右ドラッグで回転、ホイールでズームできるようにして、
      地図を観察しやすい操作感を用意している。
 
-  3. StageLayer と ExtrudedGridLayer がジオラマ舞台を描画する
-     工作マット風 floor と box 群を描き、今後の可視化を載せる土台を作る。
+  3. 各レイヤーがジオラマ舞台を描画する
+     StageLayer: 工作マット風 floor
+     MaterialSamplesLayer: マテリアルサンプル球体5種
+     WaterBoxLayer: TSL 水面シミュレーション
 
   つまり Scene.jsx は、
   「シーンの見た目と操作を定義する」
-  「ジオラマ舞台を表示する」
+  「全レイヤーを直接合成する」
   という画面構成の入口になっている。
 */
 function Scene() {
@@ -42,7 +45,13 @@ function Scene() {
 
       <group position={[0, 0, 0]} rotation={[0, 0, 0]}>
         <StageLayer />
-        <ExtrudedGridLayer />
+        <MaterialSamplesLayer />
+        <WaterBoxLayer
+          width={35.2}
+          height={22}
+          depth={0.75}
+          position={[0, 0, 0.38]}
+        />
 
         {/* 移動体レイヤーは後で再利用できるよう実装を残しつつ、いったん舞台確認のため非表示にしている。 */}
       </group>

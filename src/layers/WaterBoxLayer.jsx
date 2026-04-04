@@ -19,14 +19,9 @@ import {
   vec3,
 } from 'three/tsl'
 
-// TODO: 一時的に土台サイズに拡大（確認後に戻す）
-const WATER_BOX_WIDTH = 35.2   // FLOOR_COLUMNS * TILE_SIZE
-const WATER_BOX_HEIGHT = 22    // FLOOR_ROWS * TILE_SIZE
-const WATER_BOX_DEPTH = 0.75
-const WATER_BOX_CENTER = [0, 0, 0.38]
-const WATER_BOX_SEGMENTS_X = 64
-const WATER_BOX_SEGMENTS_Y = 64
-const WATER_BOX_SEGMENTS_Z = 16
+const DEFAULT_SEGMENTS_X = 64
+const DEFAULT_SEGMENTS_Y = 64
+const DEFAULT_SEGMENTS_Z = 16
 
 function createWaveHeightNode() {
   const flowNoise = mx_noise_float(
@@ -68,7 +63,7 @@ function createWaveHeightNode() {
   return flowNoise.add(secondaryNoise).add(detailNoise).add(longWave).add(diagonalWave)
 }
 
-function createWaterBodyMaterial(environmentMap) {
+function createWaterBodyMaterial(environmentMap, { width, height, depth }) {
   const material = new MeshPhysicalNodeMaterial({
     transparent: true,
     transmission: 0.4,
@@ -89,19 +84,19 @@ function createWaterBodyMaterial(environmentMap) {
   const waveHeight = createWaveHeightNode()
 
   const depthTint = smoothstep(
-    float(-WATER_BOX_DEPTH * 0.5),
-    float(WATER_BOX_DEPTH * 0.5),
+    float(-depth * 0.5),
+    float(depth * 0.5),
     positionLocal.z
   )
   const topMask = smoothstep(
-    float(WATER_BOX_DEPTH * 0.1),
-    float(WATER_BOX_DEPTH * 0.5),
+    float(depth * 0.1),
+    float(depth * 0.5),
     positionLocal.z
   )
   const edgeDistance = length(
     vec2(
-      positionLocal.x.div(float(WATER_BOX_WIDTH * 0.5)),
-      positionLocal.y.div(float(WATER_BOX_HEIGHT * 0.5))
+      positionLocal.x.div(float(width * 0.5)),
+      positionLocal.y.div(float(height * 0.5))
     )
   )
   const edgeFade = smoothstep(float(0.78), float(1.0), edgeDistance).oneMinus()
@@ -195,18 +190,34 @@ function createWaterBodyMaterial(environmentMap) {
   return material
 }
 
-function WaterBoxLayer() {
+function WaterBoxLayer({
+  width = 6,
+  height = 6,
+  depth = 1.5,
+  position = [0, 0, 0],
+  segments = [DEFAULT_SEGMENTS_X, DEFAULT_SEGMENTS_Y, DEFAULT_SEGMENTS_Z],
+}) {
   return (
-    <CubeCamera frames={1} resolution={256} position={WATER_BOX_CENTER}>
+    <CubeCamera frames={1} resolution={256} position={position}>
       {(environmentMap) => (
-        <WaterBoxMesh environmentMap={environmentMap} />
+        <WaterBoxMesh
+          environmentMap={environmentMap}
+          width={width}
+          height={height}
+          depth={depth}
+          position={position}
+          segments={segments}
+        />
       )}
     </CubeCamera>
   )
 }
 
-function WaterBoxMesh({ environmentMap }) {
-  const bodyMaterial = useMemo(() => createWaterBodyMaterial(environmentMap), [environmentMap])
+function WaterBoxMesh({ environmentMap, width, height, depth, position, segments }) {
+  const bodyMaterial = useMemo(
+    () => createWaterBodyMaterial(environmentMap, { width, height, depth }),
+    [environmentMap, width, height, depth]
+  )
 
   useEffect(() => {
     return () => {
@@ -215,17 +226,8 @@ function WaterBoxMesh({ environmentMap }) {
   }, [bodyMaterial])
 
   return (
-    <mesh castShadow receiveShadow position={WATER_BOX_CENTER}>
-      <boxGeometry
-        args={[
-          WATER_BOX_WIDTH,
-          WATER_BOX_HEIGHT,
-          WATER_BOX_DEPTH,
-          WATER_BOX_SEGMENTS_X,
-          WATER_BOX_SEGMENTS_Y,
-          WATER_BOX_SEGMENTS_Z,
-        ]}
-      />
+    <mesh castShadow receiveShadow position={position}>
+      <boxGeometry args={[width, height, depth, ...segments]} />
       <primitive object={bodyMaterial} attach='material' />
     </mesh>
   )

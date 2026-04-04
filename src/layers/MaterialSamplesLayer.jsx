@@ -1,6 +1,4 @@
-import { CubeCamera, Html } from '@react-three/drei'
-
-import WaterBoxLayer from './WaterBoxLayer'
+import { CubeCamera } from '@react-three/drei'
 
 const MATERIAL_SAMPLES = [
   {
@@ -68,23 +66,6 @@ const MATERIAL_SAMPLES = [
 ]
 
 const MIRROR_SAMPLE_INDEX = 3
-const LABEL_STYLE = {
-  color: '#f3f1ec',
-  fontSize: '12px',
-  fontWeight: 600,
-  letterSpacing: '0.08em',
-  textTransform: 'uppercase',
-  whiteSpace: 'nowrap',
-  pointerEvents: 'none',
-}
-
-function SampleLabel({ position, label }) {
-  return (
-    <Html position={position} center transform distanceFactor={12}>
-      <div style={LABEL_STYLE}>{label}</div>
-    </Html>
-  )
-}
 
 function SampleSphere({ sample, index }) {
   const isMirror = index === MIRROR_SAMPLE_INDEX
@@ -107,24 +88,18 @@ function SampleSphere({ sample, index }) {
       ) : (
         sphere()
       )}
-
-      <SampleLabel
-        position={[sample.position[0], sample.position[1] - 2.55, 0.42]}
-        label={sample.label}
-      />
     </group>
   )
 }
 
-function ExtrudedGridLayer() {
+function MaterialSamplesLayer({ position = [0, 0, 0.02] }) {
   return (
-    <group position={[0, 0, 0.02]}>
+    <group position={position}>
       {MATERIAL_SAMPLES.map((sample, index) => (
         <SampleSphere key={sample.label} sample={sample} index={index} />
       ))}
-      <WaterBoxLayer />
     </group>
   )
 }
 
-export default ExtrudedGridLayer
+export default MaterialSamplesLayer
