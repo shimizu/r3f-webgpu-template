@@ -16,8 +16,6 @@ import {
   time,
   vec3,
 } from 'three/tsl'
-import { FLOOR_HEIGHT, FLOOR_WIDTH } from './stageDimensions'
-
 const LABEL_STYLE = {
   color: '#f3f1ec',
   fontSize: '12px',
@@ -28,12 +26,11 @@ const LABEL_STYLE = {
   pointerEvents: 'none',
 }
 
-const WATER_BOX_WIDTH = FLOOR_WIDTH
-const WATER_BOX_HEIGHT = FLOOR_HEIGHT
-const WATER_BOX_DEPTH = 1.1
-const WATER_BOX_TOP_OFFSET = 0.04
-const WATER_BOX_CENTER = [0, 0, WATER_BOX_TOP_OFFSET + WATER_BOX_DEPTH * 0.5]
-const WATER_SURFACE_Z = WATER_BOX_TOP_OFFSET + WATER_BOX_DEPTH
+const WATER_BOX_WIDTH = 3
+const WATER_BOX_HEIGHT = 3
+const WATER_BOX_DEPTH = 3
+const WATER_BOX_CENTER = [0, -4.7, 1.45]
+const WATER_SURFACE_Z = WATER_BOX_CENTER[2] + WATER_BOX_DEPTH * 0.5
 const WATER_SURFACE_SEGMENTS_X = 160
 const WATER_SURFACE_SEGMENTS_Y = 96
 
@@ -88,11 +85,25 @@ function createWaterBodyMaterial() {
     float(WATER_BOX_DEPTH * 0.5),
     positionLocal.z
   )
+  const sideMask = normalLocal.z.abs().oneMinus().pow(3)
+  const sideNoise = mx_noise_float(
+    positionWorld.mul(vec3(0.42, 0.42, 0.68)).add(vec3(time.mul(0.18), time.mul(-0.12), 0))
+  ).mul(0.55)
+  const sideBands = positionLocal.z
+    .mul(2.8)
+    .add(positionLocal.y.mul(0.65))
+    .sub(time.mul(1.35))
+    .sin()
+    .mul(0.5)
+    .add(0.5)
+  const sideRipple = sideNoise.add(sideBands).mul(sideMask)
   const bodyColor = mix(color('#dffcff'), color('#1f9ce3'), depthTint)
   const deepColor = mix(bodyColor, color('#0b5ba5'), depthTint.mul(0.82))
+  const sideColor = mix(deepColor, color('#7ae5ff'), sideRipple.mul(0.28))
+  const bodyOpacity = sideRipple.mul(0.08).add(0.72)
 
-  material.colorNode = deepColor
-  material.opacityNode = float(0.72)
+  material.colorNode = sideColor
+  material.opacityNode = bodyOpacity
   material.attenuationColorNode = mix(color('#b7fbff'), color('#148bd5'), depthTint)
 
   return material
@@ -158,7 +169,7 @@ function WaterBoxLayer() {
         <primitive object={bodyMaterial} attach='material' />
       </mesh>
 
-      <mesh position={[0, 0, WATER_SURFACE_Z]} rotation={[0, 0, 0]}>
+      <mesh position={[WATER_BOX_CENTER[0], WATER_BOX_CENTER[1], WATER_SURFACE_Z]}>
         <planeGeometry
           args={[
             WATER_BOX_WIDTH,
@@ -171,7 +182,11 @@ function WaterBoxLayer() {
       </mesh>
 
       <Html
-        position={[0, -(WATER_BOX_HEIGHT * 0.5) - 1.2, 0.42]}
+        position={[
+          WATER_BOX_CENTER[0],
+          WATER_BOX_CENTER[1] - (WATER_BOX_HEIGHT * 0.5) - 1.2,
+          0.42,
+        ]}
         center
         transform
         distanceFactor={12}
