@@ -2,6 +2,7 @@ import { MapControls } from '@react-three/drei'
 
 import LightingRig from './LightingRig'
 import MaterialSamplesLayer from './layers/MaterialSamplesLayer'
+import SkyLayer from './layers/SkyLayer'
 import StageLayer from './layers/StageLayer'
 import WaterBoxLayer from './layers/WaterBoxLayer'
 
@@ -17,6 +18,7 @@ import WaterBoxLayer from './layers/WaterBoxLayer'
      地図を観察しやすい操作感を用意している。
 
   3. 各レイヤーがジオラマ舞台を描画する
+     SkyLayer: Preetham モデルによる大気散乱の空
      StageLayer: 工作マット風 floor
      MaterialSamplesLayer: マテリアルサンプル球体5種
      WaterBoxLayer: TSL 水面シミュレーション
@@ -29,9 +31,8 @@ import WaterBoxLayer from './layers/WaterBoxLayer'
 function Scene() {
   return (
     <>
-      <color attach='background' args={['#595959']} />
-
       <LightingRig />
+      <SkyLayer />
 
       {/* カメラ操作。
           このシーンでは左ドラッグを PAN にして、
