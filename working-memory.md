@@ -16,8 +16,8 @@
 
 ## 直近のコミット
 
-- `a19cf55`
-- message: `add diorama stage foundation`
+- `73b2ae7`
+- message: `refine material test stage lookdev`
 
 ## 主要な決定事項
 
