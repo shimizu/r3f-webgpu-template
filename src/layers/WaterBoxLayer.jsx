@@ -3,13 +3,11 @@ import { Html } from '@react-three/drei'
 import { DoubleSide } from 'three'
 import { MeshPhysicalNodeMaterial } from 'three/webgpu'
 import {
-  cameraPosition,
   color,
   float,
   mix,
   mx_noise_float,
   normalLocal,
-  normalWorld,
   positionLocal,
   positionWorld,
   smoothstep,
@@ -30,9 +28,9 @@ const WATER_BOX_WIDTH = 3
 const WATER_BOX_HEIGHT = 3
 const WATER_BOX_DEPTH = 3
 const WATER_BOX_CENTER = [0, -4.7, 1.45]
-const WATER_SURFACE_Z = WATER_BOX_CENTER[2] + WATER_BOX_DEPTH * 0.5
-const WATER_SURFACE_SEGMENTS_X = 160
-const WATER_SURFACE_SEGMENTS_Y = 96
+const WATER_BOX_SEGMENTS_X = 48
+const WATER_BOX_SEGMENTS_Y = 48
+const WATER_BOX_SEGMENTS_Z = 24
 
 function createWaveHeightNode() {
   const flowNoise = mx_noise_float(
@@ -85,6 +83,12 @@ function createWaterBodyMaterial() {
     float(WATER_BOX_DEPTH * 0.5),
     positionLocal.z
   )
+  const waveHeight = createWaveHeightNode()
+  const topMask = smoothstep(
+    float(WATER_BOX_DEPTH * 0.12),
+    float(WATER_BOX_DEPTH * 0.5),
+    positionLocal.z
+  )
   const sideMask = normalLocal.z.abs().oneMinus().pow(3)
   const sideNoise = mx_noise_float(
     positionWorld.mul(vec3(0.42, 0.42, 0.68)).add(vec3(time.mul(0.18), time.mul(-0.12), 0))
@@ -100,85 +104,47 @@ function createWaterBodyMaterial() {
   const bodyColor = mix(color('#dffcff'), color('#1f9ce3'), depthTint)
   const deepColor = mix(bodyColor, color('#0b5ba5'), depthTint.mul(0.82))
   const sideColor = mix(deepColor, color('#7ae5ff'), sideRipple.mul(0.28))
-  const bodyOpacity = sideRipple.mul(0.08).add(0.72)
+  const bodyOpacity = sideRipple.mul(0.08).add(topMask.mul(0.08)).add(0.66)
+  const displacedPosition = positionLocal.add(vec3(0, 0, waveHeight.mul(topMask)))
 
+  material.positionNode = displacedPosition
   material.colorNode = sideColor
+  material.normalNode = normalLocal.add(
+    vec3(
+      waveHeight.mul(topMask).mul(0.85),
+      waveHeight.mul(topMask).mul(0.65),
+      float(1)
+    )
+  ).normalize()
   material.opacityNode = bodyOpacity
   material.attenuationColorNode = mix(color('#b7fbff'), color('#148bd5'), depthTint)
 
   return material
 }
 
-function createWaterSurfaceMaterial() {
-  const material = new MeshPhysicalNodeMaterial({
-    transparent: true,
-    transmission: 0.98,
-    thickness: 0.8,
-    roughness: 0.035,
-    metalness: 0,
-    ior: 1.333,
-    attenuationDistance: 2.4,
-    attenuationColor: '#63d7ff',
-    clearcoat: 1,
-    clearcoatRoughness: 0.015,
-    side: DoubleSide,
-    depthWrite: false,
-  })
-
-  const waveHeight = createWaveHeightNode()
-  const depthTint = smoothstep(float(-0.2), float(0.2), waveHeight)
-  const viewDirection = cameraPosition.sub(positionWorld).normalize()
-  const fresnel = normalWorld
-    .dot(viewDirection)
-    .abs()
-    .oneMinus()
-    .pow(2.35)
-
-  const waterColor = mix(color('#65d6ff'), color('#0e67b5'), depthTint.add(0.28))
-  const surfaceColor = mix(waterColor, color('#f6feff'), fresnel.mul(0.74))
-
-  material.positionNode = positionLocal.add(vec3(0, 0, waveHeight))
-  material.colorNode = surfaceColor
-  material.normalNode = normalLocal.add(
-    vec3(
-      waveHeight.mul(1.6),
-      waveHeight.mul(1.2),
-      float(1)
-    )
-  ).normalize()
-  material.opacityNode = fresnel.mul(0.12).add(0.82)
-
-  return material
-}
-
 function WaterBoxLayer() {
   const bodyMaterial = useMemo(() => createWaterBodyMaterial(), [])
-  const surfaceMaterial = useMemo(() => createWaterSurfaceMaterial(), [])
 
   useEffect(() => {
     return () => {
       bodyMaterial.dispose()
-      surfaceMaterial.dispose()
     }
-  }, [bodyMaterial, surfaceMaterial])
+  }, [bodyMaterial])
 
   return (
     <group>
       <mesh castShadow receiveShadow position={WATER_BOX_CENTER}>
-        <boxGeometry args={[WATER_BOX_WIDTH, WATER_BOX_HEIGHT, WATER_BOX_DEPTH]} />
-        <primitive object={bodyMaterial} attach='material' />
-      </mesh>
-
-      <mesh position={[WATER_BOX_CENTER[0], WATER_BOX_CENTER[1], WATER_SURFACE_Z]}>
-        <planeGeometry
+        <boxGeometry
           args={[
             WATER_BOX_WIDTH,
             WATER_BOX_HEIGHT,
-            WATER_SURFACE_SEGMENTS_X,
-            WATER_SURFACE_SEGMENTS_Y,
+            WATER_BOX_DEPTH,
+            WATER_BOX_SEGMENTS_X,
+            WATER_BOX_SEGMENTS_Y,
+            WATER_BOX_SEGMENTS_Z,
           ]}
         />
-        <primitive object={surfaceMaterial} attach='material' />
+        <primitive object={bodyMaterial} attach='material' />
       </mesh>
 
       <Html
