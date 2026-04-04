@@ -46,25 +46,3 @@ PRs should include:
 
 ## Agent-Specific Instructions
 Primary contributors are Japanese developers. Write developer-facing responses, reviews, progress updates, and repository guidance in Japanese unless a task explicitly requires another language. Keep code, filenames, commands, and API identifiers unchanged.
-
-## Session Hooks
-Treat the following as mandatory session hooks for any agent working in this repository.
-
-### Start Hook
-Before any substantial exploration, planning, editing, or implementation, always read [working-memory.md](/home/shimizu/_playground/three-fiber/r3f-webgpu-template/working-memory.md).
-
-The purpose of this hook is to restore the current GIS/WebGPU context after a session reset. Do not start implementation from stale assumptions if `working-memory.md` exists.
-
-### End Hook
-Before ending a work session, sending a final status update, or stopping at a checkpoint, always verify whether [working-memory.md](/home/shimizu/_playground/three-fiber/r3f-webgpu-template/working-memory.md) still matches reality.
-
-At minimum, check for drift in:
-
-- current branch
-- latest meaningful commit
-- current implementation status
-- open decisions
-- next recommended tasks
-- newly added or renamed key files
-
-If there is drift, update `working-memory.md` before finishing the session.

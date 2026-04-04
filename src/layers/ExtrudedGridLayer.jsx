@@ -22,7 +22,7 @@ const MATERIAL_SAMPLES = [
   {
     position: [0, 0, 1.45],
     material: {
-      color: '#6a6e73',
+      color: '#d9dbde',
       roughness: 0.18,
       metalness: 1,
       clearcoat: 0.22,

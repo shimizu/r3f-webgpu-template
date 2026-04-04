@@ -1,5 +1,4 @@
 import { OrbitControls } from '@react-three/drei'
-import { MOUSE } from 'three'
 
 import LightingRig from './LightingRig'
 import ExtrudedGridLayer from './layers/ExtrudedGridLayer'
@@ -37,16 +36,9 @@ function Scene() {
           地図を「掴んで動かす」感覚を優先している。 */}
       <OrbitControls
         enableDamping
-        maxPolarAngle={Math.PI * 0.92}
-        minPolarAngle={0}
         minDistance={6}
         maxDistance={42}
         target={[0, 0, 0]}
-        mouseButtons={{
-          LEFT: MOUSE.ROTATE,
-          MIDDLE: MOUSE.DOLLY,
-          RIGHT: MOUSE.PAN,
-        }}
       />
 
       <group position={[0, 0, 0]} rotation={[0, 0, 0]}>
