@@ -1,12 +1,11 @@
 import { useEffect, useMemo } from 'react'
-import { CubeCamera, Html } from '@react-three/drei'
+import { Html } from '@react-three/drei'
 import { DoubleSide } from 'three'
 import { MeshPhysicalNodeMaterial } from 'three/webgpu'
 import {
   cameraPosition,
   color,
   float,
-  length,
   mix,
   mx_noise_float,
   normalLocal,
@@ -15,7 +14,6 @@ import {
   positionWorld,
   smoothstep,
   time,
-  vec2,
   vec3,
 } from 'three/tsl'
 import { FLOOR_HEIGHT, FLOOR_WIDTH } from './stageDimensions'
@@ -35,113 +33,142 @@ const WATER_BOX_HEIGHT = FLOOR_HEIGHT
 const WATER_BOX_DEPTH = 1.1
 const WATER_BOX_TOP_OFFSET = 0.04
 const WATER_BOX_CENTER = [0, 0, WATER_BOX_TOP_OFFSET + WATER_BOX_DEPTH * 0.5]
+const WATER_SURFACE_Z = WATER_BOX_TOP_OFFSET + WATER_BOX_DEPTH
+const WATER_SURFACE_SEGMENTS_X = 160
+const WATER_SURFACE_SEGMENTS_Y = 96
 
-function createWaterMaterial() {
+function createWaveHeightNode() {
+  const flowNoise = mx_noise_float(
+    positionWorld.mul(vec3(0.09, 0.12, 0.03)).add(vec3(time.mul(0.18), time.mul(-0.04), 0))
+  ).mul(0.22)
+  const secondaryNoise = mx_noise_float(
+    positionWorld.mul(vec3(0.16, 0.1, 0.04)).add(vec3(time.mul(-0.12), time.mul(0.16), 0))
+  ).mul(0.14)
+  const warpNoise = mx_noise_float(
+    positionWorld.mul(vec3(0.04, 0.05, 0.02)).add(vec3(time.mul(0.08), time.mul(-0.03), 0))
+  ).mul(2.1)
+
+  const longWave = positionWorld.y
+    .mul(0.52)
+    .add(positionWorld.x.mul(0.14))
+    .add(warpNoise)
+    .sub(time.mul(0.68))
+    .sin()
+    .mul(0.18)
+
+  const diagonalWave = positionWorld.x
+    .mul(0.28)
+    .sub(positionWorld.y.mul(0.21))
+    .add(warpNoise.mul(0.75))
+    .add(time.mul(0.44))
+    .sin()
+    .mul(0.11)
+
+  return flowNoise.add(secondaryNoise).add(longWave).add(diagonalWave).mul(0.55)
+}
+
+function createWaterBodyMaterial() {
   const material = new MeshPhysicalNodeMaterial({
     transparent: true,
     transmission: 0.99,
     thickness: 3,
-    roughness: 0.045,
+    roughness: 0.05,
     metalness: 0,
     ior: 1.333,
-    attenuationDistance: 3.8,
+    attenuationDistance: 4,
     attenuationColor: '#41bfff',
     clearcoat: 1,
-    clearcoatRoughness: 0.02,
-    envMapIntensity: 1.35,
+    clearcoatRoughness: 0.03,
     side: DoubleSide,
     depthWrite: false,
   })
-
-  const flowNoise = mx_noise_float(
-    positionWorld.mul(vec3(0.72, 0.9, 0.62)).add(vec3(time.mul(0.22), time.mul(-0.08), 0))
-  ).mul(0.11)
-  const secondaryNoise = mx_noise_float(
-    positionWorld.mul(vec3(1.5, 1.15, 1.1)).add(vec3(time.mul(-0.16), time.mul(0.21), 0))
-  ).mul(0.06)
-  const warpNoise = mx_noise_float(
-    positionWorld.mul(vec3(0.34, 0.48, 0.25)).add(vec3(time.mul(0.09), time.mul(-0.05), 0))
-  ).mul(1.8)
-  const longWave = positionWorld.y
-    .mul(0.6)
-    .add(positionWorld.x.mul(0.18))
-    .add(warpNoise)
-    .sub(time.mul(0.72))
-    .sin()
-    .mul(0.02)
-  const diagonalWave = positionWorld.x
-    .mul(0.32)
-    .sub(positionWorld.y.mul(0.24))
-    .add(warpNoise.mul(0.7))
-    .add(time.mul(0.54))
-    .sin()
-    .mul(0.012)
-  const surfaceRipple = flowNoise.mul(0.8).add(secondaryNoise.mul(0.7)).add(longWave).add(diagonalWave)
-
-  const edgeDistance = length(
-    vec2(
-      positionLocal.x.div(float(WATER_BOX_WIDTH * 0.5)),
-      positionLocal.y.div(float(WATER_BOX_HEIGHT * 0.5))
-    )
-  )
-  const edgeFactor = smoothstep(float(0.28), float(1.0), edgeDistance)
 
   const depthTint = smoothstep(
     float(-WATER_BOX_DEPTH * 0.5),
     float(WATER_BOX_DEPTH * 0.5),
     positionLocal.z
   )
-  const bodyColor = mix(color('#effdff'), color('#20a5ea'), depthTint)
-  const depthColor = mix(bodyColor, color('#0a5ea8'), depthTint.mul(0.7).add(0.18))
-  const refractedColor = mix(depthColor, color('#7ce4ff'), surfaceRipple.mul(0.75).add(0.1))
+  const bodyColor = mix(color('#dffcff'), color('#1f9ce3'), depthTint)
+  const deepColor = mix(bodyColor, color('#0b5ba5'), depthTint.mul(0.82))
 
+  material.colorNode = deepColor
+  material.opacityNode = float(0.72)
+  material.attenuationColorNode = mix(color('#b7fbff'), color('#148bd5'), depthTint)
+
+  return material
+}
+
+function createWaterSurfaceMaterial() {
+  const material = new MeshPhysicalNodeMaterial({
+    transparent: true,
+    transmission: 0.98,
+    thickness: 0.8,
+    roughness: 0.035,
+    metalness: 0,
+    ior: 1.333,
+    attenuationDistance: 2.4,
+    attenuationColor: '#63d7ff',
+    clearcoat: 1,
+    clearcoatRoughness: 0.015,
+    side: DoubleSide,
+    depthWrite: false,
+  })
+
+  const waveHeight = createWaveHeightNode()
+  const depthTint = smoothstep(float(-0.2), float(0.2), waveHeight)
   const viewDirection = cameraPosition.sub(positionWorld).normalize()
   const fresnel = normalWorld
     .dot(viewDirection)
     .abs()
     .oneMinus()
-    .pow(2.4)
-  const finalColor = mix(refractedColor, color('#f7feff'), fresnel.mul(0.78).add(edgeFactor.mul(0.1)))
+    .pow(2.35)
 
-  const rippleNormal = normalLocal.add(
+  const waterColor = mix(color('#65d6ff'), color('#0e67b5'), depthTint.add(0.28))
+  const surfaceColor = mix(waterColor, color('#f6feff'), fresnel.mul(0.74))
+
+  material.positionNode = positionLocal.add(vec3(0, 0, waveHeight))
+  material.colorNode = surfaceColor
+  material.normalNode = normalLocal.add(
     vec3(
-      longWave.mul(1.15).add(flowNoise.mul(0.2)),
-      diagonalWave.mul(1.25).add(secondaryNoise.mul(0.16)),
-      surfaceRipple.mul(0.12)
+      waveHeight.mul(1.6),
+      waveHeight.mul(1.2),
+      float(1)
     )
   ).normalize()
-
-  material.colorNode = finalColor
-  material.normalNode = rippleNormal
-  material.transmissionNode = mix(float(0.94), float(0.99), fresnel.mul(0.22))
-  material.thicknessNode = mix(float(2.8), float(4.4), depthTint.mul(0.42).add(edgeFactor.mul(0.22)))
-  material.attenuationColorNode = mix(color('#a8f4ff'), color('#148bd5'), depthTint.mul(0.82))
-  material.opacityNode = float(0.9)
+  material.opacityNode = fresnel.mul(0.12).add(0.82)
 
   return material
 }
 
 function WaterBoxLayer() {
-  const material = useMemo(() => createWaterMaterial(), [])
+  const bodyMaterial = useMemo(() => createWaterBodyMaterial(), [])
+  const surfaceMaterial = useMemo(() => createWaterSurfaceMaterial(), [])
 
   useEffect(() => {
-    return () => material.dispose()
-  }, [material])
+    return () => {
+      bodyMaterial.dispose()
+      surfaceMaterial.dispose()
+    }
+  }, [bodyMaterial, surfaceMaterial])
 
   return (
     <group>
-      <CubeCamera frames={1} resolution={256} position={WATER_BOX_CENTER}>
-        {(environmentMap) => {
-          material.envMap = environmentMap
+      <mesh castShadow receiveShadow position={WATER_BOX_CENTER}>
+        <boxGeometry args={[WATER_BOX_WIDTH, WATER_BOX_HEIGHT, WATER_BOX_DEPTH]} />
+        <primitive object={bodyMaterial} attach='material' />
+      </mesh>
 
-          return (
-            <mesh castShadow receiveShadow position={WATER_BOX_CENTER}>
-              <boxGeometry args={[WATER_BOX_WIDTH, WATER_BOX_HEIGHT, WATER_BOX_DEPTH]} />
-              <primitive object={material} attach='material' />
-            </mesh>
-          )
-        }}
-      </CubeCamera>
+      <mesh position={[0, 0, WATER_SURFACE_Z]} rotation={[0, 0, 0]}>
+        <planeGeometry
+          args={[
+            WATER_BOX_WIDTH,
+            WATER_BOX_HEIGHT,
+            WATER_SURFACE_SEGMENTS_X,
+            WATER_SURFACE_SEGMENTS_Y,
+          ]}
+        />
+        <primitive object={surfaceMaterial} attach='material' />
+      </mesh>
 
       <Html
         position={[0, -(WATER_BOX_HEIGHT * 0.5) - 1.2, 0.42]}
