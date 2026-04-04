@@ -66,82 +66,93 @@ const MATERIAL_SAMPLES = [
 ]
 
 const MIRROR_SAMPLE_INDEX = 3
+const WATER_SAMPLE_INDEX = 5
+
+const LABEL_STYLE = {
+  color: '#f3f1ec',
+  fontSize: '12px',
+  fontWeight: 600,
+  letterSpacing: '0.08em',
+  textTransform: 'uppercase',
+  whiteSpace: 'nowrap',
+  pointerEvents: 'none',
+}
+
+function SampleLabel({ position, label }) {
+  return (
+    <Html position={position} center transform distanceFactor={12}>
+      <div style={LABEL_STYLE}>{label}</div>
+    </Html>
+  )
+}
+
+function SampleSphere({ sample, index }) {
+  const isMirror = index === MIRROR_SAMPLE_INDEX
+  const isWater = index === WATER_SAMPLE_INDEX
+  const meshPosition = isMirror ? [0, 0, 0] : sample.position
+  const rotation = [0, index === 4 ? Math.PI * 0.22 : 0, 0]
+
+  const sphere = (environmentMap) => (
+    <mesh castShadow receiveShadow position={meshPosition} rotation={rotation}>
+      {isWater ? (
+        <boxGeometry args={[2.45, 2.45, 2.45]} />
+      ) : (
+        <sphereGeometry args={[1.35, 96, 96]} />
+      )}
+      <meshPhysicalMaterial
+        {...sample.material}
+        envMap={environmentMap}
+        reflectivity={isWater ? 1 : sample.material.reflectivity}
+      />
+    </mesh>
+  )
+
+  return (
+    <group key={sample.label}>
+      {isMirror || isWater ? (
+        <CubeCamera frames={Infinity} resolution={256} position={sample.position}>
+          {sphere}
+        </CubeCamera>
+      ) : (
+        sphere()
+      )}
+
+      <SampleLabel
+        position={[sample.position[0], sample.position[1] - 2.55, 0.42]}
+        label={sample.label}
+      />
+    </group>
+  )
+}
 
 function ExtrudedGridLayer() {
+  const samples = [
+    ...MATERIAL_SAMPLES,
+    {
+      position: [0, -4.7, 1.45],
+      label: 'Water',
+      material: {
+        color: '#d9f3ff',
+        roughness: 0.03,
+        metalness: 0,
+        transmission: 0.99,
+        thickness: 3.6,
+        transparent: true,
+        opacity: 0.52,
+        ior: 1.333,
+        attenuationDistance: 4.8,
+        attenuationColor: '#69c7ff',
+        clearcoat: 1,
+        clearcoatRoughness: 0.02,
+      },
+    },
+  ]
+
   return (
     <group position={[0, 0, 0.02]}>
-      {MATERIAL_SAMPLES.map((sample, index) => {
-        if (index === MIRROR_SAMPLE_INDEX) {
-          return (
-            <group key={index}>
-              <CubeCamera frames={Infinity} resolution={256} position={sample.position}>
-                {(environmentMap) => (
-                  <mesh castShadow receiveShadow position={[0, 0, 0]}>
-                    <sphereGeometry args={[1.35, 96, 96]} />
-                    <meshPhysicalMaterial {...sample.material} envMap={environmentMap} />
-                  </mesh>
-                )}
-              </CubeCamera>
-
-              <Html
-                position={[sample.position[0], sample.position[1] - 2.55, 0.42]}
-                center
-                transform
-                distanceFactor={12}
-              >
-                <div
-                  style={{
-                    color: '#f3f1ec',
-                    fontSize: '12px',
-                    fontWeight: 600,
-                    letterSpacing: '0.08em',
-                    textTransform: 'uppercase',
-                    whiteSpace: 'nowrap',
-                    pointerEvents: 'none',
-                  }}
-                >
-                  {sample.label}
-                </div>
-              </Html>
-            </group>
-          )
-        }
-
-        return (
-          <group key={index}>
-            <mesh
-              castShadow
-              receiveShadow
-              position={sample.position}
-              rotation={[0, index === 4 ? Math.PI * 0.22 : 0, 0]}
-            >
-              <sphereGeometry args={[1.35, 96, 96]} />
-              <meshPhysicalMaterial {...sample.material} />
-            </mesh>
-
-            <Html
-              position={[sample.position[0], sample.position[1] - 2.55, 0.42]}
-              center
-              transform
-              distanceFactor={12}
-            >
-              <div
-                style={{
-                  color: '#f3f1ec',
-                  fontSize: '12px',
-                  fontWeight: 600,
-                  letterSpacing: '0.08em',
-                  textTransform: 'uppercase',
-                  whiteSpace: 'nowrap',
-                  pointerEvents: 'none',
-                }}
-              >
-                {sample.label}
-              </div>
-            </Html>
-          </group>
-        )
-      })}
+      {samples.map((sample, index) => (
+        <SampleSphere key={sample.label} sample={sample} index={index} />
+      ))}
     </group>
   )
 }

@@ -74,16 +74,6 @@ function StageLayer() {
           reflectivity={0.8}
         />
       </instancedMesh>
-
-      <mesh receiveShadow position={[0, 0, -0.01]}>
-        <planeGeometry args={[FLOOR_WIDTH, FLOOR_HEIGHT]} />
-        <shadowMaterial transparent opacity={0.28} />
-      </mesh>
-
-      <mesh position={[0, FLOOR_HEIGHT * 0.5 - 0.4, 4.6]} rotation={[Math.PI * 0.5, 0, 0]}>
-        <planeGeometry args={[FLOOR_WIDTH + 16, 10]} />
-        <meshStandardMaterial color='#666666' roughness={0.98} metalness={0.02} />
-      </mesh>
     </group>
   )
 }
