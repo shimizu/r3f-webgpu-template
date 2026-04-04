@@ -258,6 +258,229 @@ GPU でやる処理:
 
 100 万件級では、常に全件を個体として描画するのは非現実的。ズームアウト時は個体描画から集約描画へ落とす必要がある。
 
+## テンプレートとしての拡張方針
+
+このプロジェクトは、単発デモではなく「WebGPU / Compute を活用したリッチな地図表現テンプレート」として育てる。
+
+狙い:
+
+- GIS 可視化を始めるときの土台になる
+- 表現を差し替えても GPU First の中核設計を崩さない
+- Bloom や Tilt Shift のような見た目の演出を、レイヤー設計と分離して扱える
+- 移動体、主題図、流体表現、集約表現を同じ座標系と同じ view 管理で重ねられる
+
+重要なのは、「見た目を盛る」ことと「データ処理を GPU に寄せる」ことを混ぜないこと。テンプレートとしては、データ、レイヤー、スタイル、ポストエフェクトを別責務として設計した方が伸びる。
+
+## テンプレートの 4 層構成
+
+リッチな地図テンプレートとしては、表示系を以下の 4 層で整理する。
+
+### 1. Data / Projection 層
+
+役割:
+
+- GeoJSON
+- 移動体観測
+- ラスタ格子
+- ベクトル場
+- 集約セル
+
+これらを packed buffer / texture に変換し、同じ view / projection で扱う。
+
+方針:
+
+- CPU は受信、正規化、最小限のパッキングのみ
+- GPU は投影、補間、更新、集約を担当
+- GeoJSON と移動体で projection kernel を共有する
+- projection と camera fit は分離する
+
+### 2. Layer 層
+
+役割:
+
+- データをどう描くかを定義する
+- レイヤーごとに必要な compute pass と draw path を持つ
+- visibility, blend, z-order, interaction を管理する
+
+最低限そろえたいレイヤー:
+
+- `BaseMapLayer`
+- `PointLayer`
+- `MovingEntitiesLayer`
+- `TrailLayer`
+- `AggregationLayer`
+- `FlowFieldLayer`
+- `RasterOverlayLayer`
+- `LabelsLayer`
+
+レイヤーは「地図記号の種類」ではなく「描画責務の単位」として切る。
+
+### 3. Style / Theme 層
+
+役割:
+
+- 色
+- 線幅
+- 発光量
+- 透明度
+- サイズ
+- 高度表現
+- アニメーション速度
+
+これらをレイヤー実装から切り離し、テーマとして差し替えられるようにする。
+
+テンプレートとして持ちたいプリセット例:
+
+- ダーク海図風
+- ネオン観測網風
+- 白地図 + 彩度低めの主題図
+- 気象可視化風
+
+重要なのは、主題図ロジックを変えずに見た目だけ切り替えられること。
+
+### 4. Post Effects 層
+
+役割:
+
+- Bloom
+- Tilt Shift
+- Depth of Field
+- Vignette
+- Color Grading
+- Fog / Haze
+- AA
+
+これらは地図そのものの意味表現ではなく、最終ルックを整える層として扱う。
+
+原則:
+
+- 発光はレイヤー側で「どこを光らせるか」を決める
+- Bloom は Post Effects 層で「どうにじませるか」を決める
+- Tilt Shift は常用ではなく俯瞰演出モードとして使う
+- 色味の統一は Color Grading で行う
+
+## 表現テンプレートとして追加したい主題図
+
+このテンプレートでは、単なる点群表示ではなく、主題図モードを持てるようにする。
+
+優先候補:
+
+- Choropleth
+- Graduated Symbols
+- Dot Density
+- Heatmap
+- Hexbin
+- Flow Map
+- Animated Trail Map
+- Particle Advection
+- Raster Overlay
+
+設計上は、各主題図を完全に独立実装するより、できるだけ以下の共通 API で切り替えられるようにする。
+
+- `view`
+- `dataSource`
+- `renderMode`
+- `stylePreset`
+- `fxPreset`
+
+## 見栄えを良くするための実装原則
+
+見た目の強さは、ポストエフェクト単体ではなく、地図表現そのものの設計で決まる。
+
+まず地図レイヤー側でやるべきこと:
+
+- 海岸線、行政界、道路、航路を階層ごとに描き分ける
+- 点を単色 billboard ではなく、コア + グローの 2 層で表現する
+- トレイルに age fade と additive blending を入れる
+- 低ズームでは density / hex / grid へ切り替える
+- 高度や速度を z、色、発光量、サイズに分配して使う
+
+その上でポスト側で効かせること:
+
+- Bloom は重要な発光レイヤーに限定する
+- Vignette と Fog で視線誘導を行う
+- Color Grading でルックを統一する
+- Tilt Shift は俯瞰静止画や演出モードに限定する
+
+## 直近で決めるべき API
+
+テンプレートとして育てるなら、機能追加の前にレイヤー API を揃える。
+
+最低限必要な共通パラメータ:
+
+- `id`
+- `visible`
+- `view`
+- `dataSource`
+- `renderMode`
+- `style`
+- `zIndex`
+
+view と style を draw 実装から分離しておくと、同じデータを別テーマや別主題図で再利用しやすい。
+
+## 推奨ディレクトリ方針
+
+今後の拡張では、Scene に責務を集めすぎない。
+
+候補:
+
+- `src/core/view/`
+- `src/core/theme/`
+- `src/core/postfx/`
+- `src/core/layers/`
+- `src/compute/`
+- `src/gis/`
+- `src/layers/base-map/`
+- `src/layers/moving-entities/`
+- `src/layers/trails/`
+- `src/layers/aggregation/`
+- `src/layers/flow-field/`
+
+重要なのは、地理座標の処理、レイヤー表現、見た目の演出を別フォルダ責務にすること。
+
+## リッチ地図テンプレートへの実装ロードマップ
+
+### Phase A: テンプレート基盤を固める
+
+- projection kernel の共有化を進める
+- `Layer` の共通インターフェースを定義する
+- `Scene` を「view / layers / postfx」の組み立て役へ縮小する
+- `runBarsCompute.js` の退役方針を固める
+
+### Phase B: 表現の核をそろえる
+
+- `TrailLayer` を GPU リングバッファで実装する
+- `AggregationLayer` を grid / density ベースで実装する
+- `FlowFieldLayer` を compute 粒子で実装する
+- `BaseMapLayer` を複数階層表示へ拡張する
+
+### Phase C: テーマと演出を標準化する
+
+- `theme/style preset` を導入する
+- ポストエフェクトパイプラインを標準搭載する
+- Bloom / Vignette / Color Grading / Tilt Shift を切り替え可能にする
+- スクリーンショット映えする 2 から 3 種類の見た目プリセットを用意する
+
+### Phase D: 主題図テンプレートへ広げる
+
+- choropleth
+- heatmap
+- hexbin
+- raster overlay
+- labels
+
+を layer / renderMode 単位で追加する。
+
+## 今後の判断基準
+
+新しい機能や演出を追加するときは、以下を満たすかで判断する。
+
+- CPU で個体ごとの毎フレーム処理を増やしていないか
+- view / projection をレイヤー間で共有できているか
+- style の差し替えがロジック変更を要求していないか
+- 低ズーム時に個体表示のまま破綻しないか
+- 単発デモではなく再利用可能な layer / theme / fx として切り出せているか
+
 集約方式候補:
 
 - グリッド集約

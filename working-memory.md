@@ -12,12 +12,12 @@
 
 ## 現在のブランチ
 
-- `feat/gis`
+- `main`
 
 ## 直近のコミット
 
-- `b19cb54`
-- message: `add gpu gis architecture docs`
+- `4fc694d`
+- message: `refactor bars compute runner`
 
 ## 主要な決定事項
 
@@ -50,6 +50,20 @@ CPU に残してよいもの:
 - 主役は大量移動体、GPU 補間、GPU トレイル、風場粒子、GPU 集約
 - ただし投影式は背景地図と移動体で必ず共有する
 
+### 4. テンプレートとして育てる
+
+- このプロジェクトは単発デモではなく、WebGPU / Compute を使ったリッチな地図表現テンプレートとして育てる
+- `Data / Projection`、`Layer`、`Style / Theme`、`Post Effects` の 4 層で責務を分ける
+- Bloom や Tilt Shift などの演出は、地図レイヤー実装と分離して `Post Effects` 層で扱う
+- 主題図、移動体、流体表現、集約表現を同じ view / projection 管理で重ねられる構造を目指す
+
+### 5. ジオラマ風の舞台を先に作る
+
+- 全体のルックは、地図を平面 UI としてではなく、工作マット上のジオラマとして成立させる方向を取る
+- まず `StageLayer`、`LightingRig`、`ExtrudedGridLayer` を作り、floor、box、ライティングだけで絵が成立する状態を先に作る
+- その後に Base Map、Aggregation、Glow、Moving Entities、Trail などのレイヤーを上に重ねる
+- GIS レイヤー実装より先に lookdev の基準を固め、後続レイヤーの見た目判断基準にする
+
 ## 参考ファイル
 
 - [plan.md](/home/shimizu/_playground/three-fiber/r3f-webgpu-template/plan.md)
@@ -60,6 +74,7 @@ CPU に残してよいもの:
 - [.codex/hooks/session_start.py](/home/shimizu/_playground/three-fiber/r3f-webgpu-template/.codex/hooks/session_start.py)
 - [.codex/hooks/stop_working_memory_check.py](/home/shimizu/_playground/three-fiber/r3f-webgpu-template/.codex/hooks/stop_working_memory_check.py)
 - [reference/projection.md](/home/shimizu/_playground/three-fiber/r3f-webgpu-template/reference/projection.md)
+- [reference/example.png](/home/shimizu/_playground/three-fiber/r3f-webgpu-template/reference/example.png)
 - [docs/gpu-gis-particle-architecture.md](/home/shimizu/_playground/three-fiber/r3f-webgpu-template/docs/gpu-gis-particle-architecture.md)
 - [src/Scene.jsx](/home/shimizu/_playground/three-fiber/r3f-webgpu-template/src/Scene.jsx)
 - [src/compute/runBarsCompute.js](/home/shimizu/_playground/three-fiber/r3f-webgpu-template/src/compute/runBarsCompute.js)
@@ -96,6 +111,9 @@ GPU 実装で最初に使う候補:
 - `src/data/mockObservations.js` で `lon:-180..180`, `lat:-90..90` の全世界ランダム観測データを生成できる
 - `src/layers/MovingEntitiesLayer.jsx` を追加し、投影済み state を billboard instancing で描画している
 - `src/layers/BaseMapLayer.jsx` を追加し、`public/data/world.geojson` の海岸線を背景ラインとして描画できる
+- `src/layers/StageLayer.jsx` を追加し、工作マット風のグリッド floor と厚みのある stage を描画できる
+- `src/layers/ExtrudedGridLayer.jsx` を追加し、ジオラマ確認用の box 群を舞台上に並べられる
+- `src/LightingRig.jsx` を追加し、ジオラマ向けのキーライト、補助光、影ありライト構成を入れた
 - `src/gis/projection.js` を追加し、CPU 側の静的 GeoJSON 投影にも同じ view 設定を使えるようにした
 - `src/gis/views.js` を追加し、world / Tokyo Bay の view 定義を `gis` 配下へ集約した
 - `src/gis/projectionOptions.js` を追加し、CPU/GPU が同じ投影オプション解決を使う形に寄せた
@@ -114,29 +132,45 @@ GPU 実装で最初に使う候補:
 - `src/Scene.jsx` と `src/compute/*` に入門者向けの解説コメントを追加済み
 - `docs/gpu-gis-particle-architecture.md` に、現行アーキテクチャ、データフロー、実データを GPU へ渡す方法の入門者向け解説を追加した
 - トレイル、風場、LOD はまだ未実装
-- `plan.md` は GPU First 方針に更新済み
+- `plan.md` は GPU First 方針に加えて、リッチな地図表現テンプレートとして育てる 4 層構成、主題図候補、theme / postfx 方針、Phase A-D のロードマップを追記済み
 - `task.md` は実装タスク分解済み
 - `.codex` に SessionStart / Stop フックを追加済み
 - SessionStart で `working-memory.md` を developer context に注入する
 - Stop で `working-memory.md` の整合確認を促す継続フックを入れた
 - 現在は `world.geojson` とパーティクルを同時表示して位置関係を確認している
+- Layer API、Theme API、Post Effects パイプラインはまだ未着手
+- `reference/example.png` を、押し出し集約、発光密度、粒子ボリューム、フロー、ネットワーク表現の参照として追加した
+- テンプレートの初期表現候補としては `AggregationLayer`、`GlowPointLayer`、`TrailLayer`、`FlowFieldLayer` の優先度が高い
+- ジオラマ風ルックの方針が追加され、工作マット風 floor、厚みのある stage、box 表現、リッチなライティングを先に整える方針になった
+- `Scene` は背景色、fog、tilted stage、lighting rig を持つ構成へ更新済み
+- `StageLayer`、`LightingRig`、`ExtrudedGridLayer` の最小実装は着手済み
+- `MovingEntitiesLayer` の実装は保持したまま、舞台確認のため現在は `Scene` から外して非表示にしている
+- `BaseMapLayer` の実装も保持したまま、舞台確認のため現在は `Scene` から外して非表示にしている
+- `npm run build` は通過した
+- `npm run lint` はこの環境で `eslint` バイナリが見つからず未確認
 
 ## 次に着手するべき作業
 
 優先順:
 
-1. GeoJSON と移動体で共有する projection kernel の形を決める
-2. `src/compute/createInterpolationPass.js` を作り、`prev*` と `timestamp` を GPU 補間へつなぐ
-3. `src/layers/MovingEntitiesLayer.jsx` を projected state と interpolation state の二段構成へ広げる
-4. `src/compute/runBarsCompute.js` は役割縮小または退役方針を決める
-5. `Trail Update Pass` の設計に入る
+1. `StageLayer` と `LightingRig` の lookdev を詰め、ジオラマ舞台としての質感を上げる
+2. `ExtrudedGridLayer` を今後の `AggregationLayer` へつながる API に寄せる
+3. テンプレート向けの Layer API を決める
+4. GeoJSON と移動体で共有する projection kernel の形を決める
+5. `AggregationLayer` と `GlowPointLayer` の最小仕様を決める
+6. Theme / Style API と Post Effects の責務分離方針を決める
+7. `src/compute/runBarsCompute.js` は役割縮小または退役方針を決める
+8. `Trail Update Pass` の設計に入る
 
 直近のデバッグ優先順位:
 
-1. `world.geojson` を適切な投影と scale で安定表示する
-2. GeoJSON と移動体で共有する projection kernel にさらに寄せる
-3. Interpolation Pass の速度・補間仕様を必要なら調整する
-4. その後にトレイルへ進む
+1. floor, stage, box, lighting だけでジオラマとして成立する look を作る
+2. `Scene` を `view / stage / layers / postfx` の組み立て役に縮小できる構成を検討する
+3. `ExtrudedGridLayer` をデータ駆動 layer へ一般化できる形にする
+4. `world.geojson` を適切な投影と scale で安定表示する
+5. GeoJSON と移動体で共有する projection kernel にさらに寄せる
+6. 発光密度や押し出し集約を受け止める layer / style 構成を決める
+7. Interpolation Pass の速度・補間仕様を必要なら調整する
 
 ## 実装の最初の完成ライン
 
@@ -154,6 +188,6 @@ GPU 実装で最初に使う候補:
 - フックを有効にするため、Codex 側で repo-local `.codex/config.toml` が読まれる前提
 - Stop hook は 1 回だけ継続をかけ、そのターンの終了前確認を促す実装
 - `npm run build` は通過済み
-- `npm run lint` は通過済み
+- `npm run lint` は現在の環境では `eslint` バイナリが見つからず未実行
 - `public/data/world.geojson` は今回の表示切り替え対象
-- 次回は world 表示の確認か、Interpolation Pass の補間仕様調整から再開する
+- 次回は `StageLayer` / `LightingRig` の lookdev 調整、`ExtrudedGridLayer` の一般化、またはジオラマ floor の実装調整から再開する

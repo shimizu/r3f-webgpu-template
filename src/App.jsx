@@ -26,7 +26,7 @@ function App() {
       <div className='control-panel'>
         <p className='control-title'>GPU First GIS</p>
         <p className='control-copy'>
-          緯度経度の画面座標への変換を ComputeShaderで行い、多数のパーティクルを地図上で動かす実験。
+          まずはジオラマとして成立する舞台を作り、その上に地図と GPU レイヤーを重ねていく実験。
         </p>
         <div className='control-grid'>
           {ENTITY_PRESETS.map((count) => {
@@ -42,11 +42,12 @@ function App() {
             )
           })}
         </div>
-        <p className='control-caption'>phase 1: projection pass only</p>
+        <p className='control-caption'>phase 0: diorama stage + projection</p>
       </div>
 
       <Canvas
-        camera={{ position: [0, 0, 26], fov: 42, near: 0.01, far: 500 }}
+        shadows
+        camera={{ position: [0, -10, 18], fov: 36, near: 0.01, far: 500 }}
         gl={createRenderer}
       >
         <Scene entityCount={entityCount} />

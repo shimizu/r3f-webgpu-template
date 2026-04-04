@@ -4,9 +4,9 @@ import { useFrame } from '@react-three/fiber'
 import { useRef, useState } from 'react'
 import { MOUSE } from 'three'
 
-import { WORLD_VIEW } from './gis/views'
-import BaseMapLayer from './layers/BaseMapLayer'
-import MovingEntitiesLayer from './layers/MovingEntitiesLayer'
+import LightingRig from './LightingRig'
+import ExtrudedGridLayer from './layers/ExtrudedGridLayer'
+import StageLayer from './layers/StageLayer'
 
 /*
   このファイルの処理の流れ
@@ -73,23 +73,21 @@ function PerformanceHud({ entityCount }) {
 function Scene({ entityCount }) {
   return (
     <>
-      {/* Canvas 全体の背景色。3D オブジェクトが何もない場所に見える色になる。 */}
-      <color attach='background' args={['#04070d']} />
+      <color attach='background' args={['#d8dde3']} />
+      <fog attach='fog' args={['#d8dde3', 18, 46]} />
 
-      {/* シーン全体を最低限見えるようにする環境光。影の強いコントラストを避ける役割。 */}
-      <ambientLight intensity={0.55} />
-      {/* 方向を持つ主光源。地図や粒子の面に少し立体感を出す。 */}
-      <directionalLight position={[8, 12, 10]} intensity={1.1} color='#b5d8ff' />
+      <LightingRig />
 
       {/* カメラ操作。
           このシーンでは左ドラッグを PAN にして、
           地図を「掴んで動かす」感覚を優先している。 */}
       <OrbitControls
         enableDamping
-        maxPolarAngle={Math.PI * 0.495}
-        minDistance={0.5}
-        maxDistance={120}
-        target={[0, 0, 0]}
+        maxPolarAngle={Math.PI * 0.48}
+        minPolarAngle={Math.PI * 0.12}
+        minDistance={7}
+        maxDistance={42}
+        target={[0, -1.8, 0]}
         mouseButtons={{
           LEFT: MOUSE.PAN,
           MIDDLE: MOUSE.DOLLY,
@@ -100,13 +98,12 @@ function Scene({ entityCount }) {
       {/* HTML で重ねるデバッグ表示。entity 数と FPS を確認する。 */}
       <PerformanceHud entityCount={entityCount} />
 
-      {/* GeoJSON から作る背景地図レイヤー。
-          現在は world view を使って海岸線をデバッグ表示している。 */}
-      <BaseMapLayer url='/data/world.geojson' view={WORLD_VIEW} />
+      <group position={[0, -0.6, 0.7]} rotation={[-Math.PI * 0.38, 0, 0]}>
+        <StageLayer />
+        <ExtrudedGridLayer />
 
-      {/* GPU 側で補間・投影した移動体レイヤー。
-          entityCount が変わると内部バッファを作り直したいので key を付けて再マウントさせる。 */}
-      <MovingEntitiesLayer key={entityCount} entityCount={entityCount} view={WORLD_VIEW} />
+        {/* 移動体レイヤーは後で再利用できるよう実装を残しつつ、いったん舞台確認のため非表示にしている。 */}
+      </group>
     </>
   )
 }
