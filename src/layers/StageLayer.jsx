@@ -6,7 +6,6 @@ const FLOOR_ROWS = 10
 const TILE_SIZE = 2.2
 const FLOOR_WIDTH = FLOOR_COLUMNS * TILE_SIZE
 const FLOOR_HEIGHT = FLOOR_ROWS * TILE_SIZE
-
 function createTileData() {
   const bright = new Color('#8f8f8f')
   const dark = new Color('#7b7b7b')
