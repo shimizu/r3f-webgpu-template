@@ -20,7 +20,7 @@ function App() {
     <div className='app-shell'>
       <Canvas
         shadows
-        camera={{ position: [0, -10, 18], fov: 36, near: 0.01, far: 500 }}
+        camera={{ position: [0, -22, 1.45], fov: 36, near: 0.01, far: 500 }}
         gl={createRenderer}
       >
         <Scene />

@@ -38,7 +38,7 @@ function Scene() {
         enableDamping
         minDistance={6}
         maxDistance={42}
-        target={[0, 0, 0]}
+        target={[0, 0, 1.45]}
       />
 
       <group position={[0, 0, 0]} rotation={[0, 0, 0]}>

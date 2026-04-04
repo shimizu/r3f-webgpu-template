@@ -1,3 +1,5 @@
+import { CubeCamera } from '@react-three/drei'
+
 const MATERIAL_SAMPLES = [
   {
     position: [-7.4, 0, 1.45],
@@ -32,11 +34,11 @@ const MATERIAL_SAMPLES = [
   {
     position: [3.7, 0, 1.45],
     material: {
-      color: '#8f7457',
-      roughness: 0.16,
+      color: '#f3f4f6',
+      roughness: 0.01,
       metalness: 1,
-      clearcoat: 0.24,
-      clearcoatRoughness: 0.07,
+      clearcoat: 0,
+      clearcoatRoughness: 0,
     },
   },
   {
@@ -58,10 +60,25 @@ const MATERIAL_SAMPLES = [
   },
 ]
 
+const MIRROR_SAMPLE_INDEX = 3
+
 function ExtrudedGridLayer() {
   return (
     <group position={[0, 0, 0.02]}>
       {MATERIAL_SAMPLES.map((sample, index) => {
+        if (index === MIRROR_SAMPLE_INDEX) {
+          return (
+            <CubeCamera key={index} frames={Infinity} resolution={256} position={sample.position}>
+              {(environmentMap) => (
+                <mesh castShadow receiveShadow position={[0, 0, 0]}>
+                  <sphereGeometry args={[1.35, 96, 96]} />
+                  <meshPhysicalMaterial {...sample.material} envMap={environmentMap} />
+                </mesh>
+              )}
+            </CubeCamera>
+          )
+        }
+
         return (
           <mesh
             key={index}
