@@ -145,17 +145,52 @@ function createWaterBodyMaterial(environmentMap, { width, height, depth }) {
     .mul(topMask)
     .mul(edgeFade)
 
+  // フェイクコースティクス: Voronoi 風のノイズ2層を交差させて集光パターンを生成
+  const causticA = mx_noise_float(
+    vec3(
+      positionLocal.x.mul(1.8).add(time.mul(0.2)),
+      positionLocal.y.mul(1.6).sub(time.mul(0.15)),
+      0
+    )
+  ).sin().abs()
+  const causticB = mx_noise_float(
+    vec3(
+      positionLocal.x.mul(-1.4).add(time.mul(0.12)),
+      positionLocal.y.mul(2.1).add(time.mul(0.18)),
+      0
+    )
+  ).sin().abs()
+  const causticPattern = causticA.mul(causticB)
+    .smoothstep(float(0.15), float(0.7))
+  // コースティクスは底面〜中層で強く、上面では弱い
+  const causticDepthMask = depthTint.oneMinus().smoothstep(float(0.1), float(0.6))
+  const causticIntensity = causticPattern.mul(causticDepthMask).mul(0.35)
+
+  // ホワイトウォーター: 波頭が高い部分に白い泡を乗せる
+  const foamThreshold = waveHeight.smoothstep(float(0.18), float(0.35))
+  const foamNoise = mx_noise_float(
+    vec3(
+      positionLocal.x.mul(2.5).add(time.mul(0.3)),
+      positionLocal.y.mul(2.2).sub(time.mul(0.25)),
+      0
+    )
+  ).mul(0.5).add(0.5)
+  const foam = foamThreshold.mul(foamNoise).mul(topMask).mul(edgeFade)
+
   // 水面カラー: 落ち着いた暗めの水色
   const surfaceColor = mix(color('#85c1bf'), color('#4393a8'), waveShade.mul(0.6))
   const topColor = mix(surfaceColor, color('#03411d'), topGlint.mul(0.25))
+  // 上面にホワイトウォーターを加算
+  const topWithFoam = mix(topColor, color('#d8eef2'), foam.mul(0.6))
 
-  // 側面カラー: 深度に応じた吸収（暗め）
+  // 側面カラー: 深度に応じた吸収（暗め）+ コースティクス
   const sideShallow = color('#4f97b6')
   const sideDeep = color('#418cbe')
   const sideColor = mix(sideDeep, sideShallow, depthTint.mul(0.85))
-  const sideWithRipple = mix(sideColor, color('#7f5dac'), sideRipple.mul(0.08))
+  const sideWithCaustic = mix(sideColor, color('#8cd4e8'), causticIntensity)
+  const sideWithRipple = mix(sideWithCaustic, color('#7f5dac'), sideRipple.mul(0.08))
 
-  const finalColor = mix(sideWithRipple, topColor, topMask.mul(0.9))
+  const finalColor = mix(sideWithRipple, topWithFoam, topMask.mul(0.9))
 
   // フレネル: 浅い角度で反射、正面から透明
   const viewDirection = cameraPosition.sub(positionWorld).normalize()
