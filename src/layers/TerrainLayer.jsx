@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { BufferGeometry, Float32BufferAttribute, Uint32BufferAttribute } from 'three'
+import { BufferGeometry, Float32BufferAttribute, SRGBColorSpace, TextureLoader, Uint32BufferAttribute } from 'three'
 import { MeshPhysicalNodeMaterial } from 'three/webgpu'
 import {
   attribute,
@@ -7,6 +7,8 @@ import {
   float,
   mix,
   smoothstep,
+  texture,
+  uv,
 } from 'three/tsl'
 import { fromArrayBuffer } from 'geotiff'
 
@@ -24,30 +26,38 @@ const DEFAULT_COLORS = {
   side: '#3a2a1a',
 }
 
-function createTerrainMaterial(colors) {
+function createTerrainMaterial(colors, texMap) {
   const material = new MeshPhysicalNodeMaterial({
     roughness: 0.85,
     metalness: 0.0,
     flatShading: false,
   })
 
-  const elevation = attribute('aElevation', 'float')
-
-  const c1 = mix(color(colors.deepOcean), color(colors.shallowOcean),
-    smoothstep(float(0.0), float(0.3), elevation))
-  const c2 = mix(c1, color(colors.shore),
-    smoothstep(float(0.3), float(0.4), elevation))
-  const c3 = mix(c2, color(colors.lowland),
-    smoothstep(float(0.4), float(0.5), elevation))
-  const c4 = mix(c3, color(colors.highland),
-    smoothstep(float(0.5), float(0.7), elevation))
-  const c5 = mix(c4, color(colors.mountain),
-    smoothstep(float(0.7), float(0.85), elevation))
-  const finalColor = mix(c5, color(colors.peak),
-    smoothstep(float(0.85), float(1.0), elevation))
-
   const sideMask = attribute('aSideMask', 'float')
-  material.colorNode = mix(finalColor, color(colors.side), sideMask)
+  const sideColor = color(colors.side)
+
+  if (texMap) {
+    const texNode = texture(texMap)
+    const texColor = texNode.sample(uv())
+    material.colorNode = mix(texColor, sideColor, sideMask)
+  } else {
+    const elevation = attribute('aElevation', 'float')
+
+    const c1 = mix(color(colors.deepOcean), color(colors.shallowOcean),
+      smoothstep(float(0.0), float(0.3), elevation))
+    const c2 = mix(c1, color(colors.shore),
+      smoothstep(float(0.3), float(0.4), elevation))
+    const c3 = mix(c2, color(colors.lowland),
+      smoothstep(float(0.4), float(0.5), elevation))
+    const c4 = mix(c3, color(colors.highland),
+      smoothstep(float(0.5), float(0.7), elevation))
+    const c5 = mix(c4, color(colors.mountain),
+      smoothstep(float(0.7), float(0.85), elevation))
+    const finalColor = mix(c5, color(colors.peak),
+      smoothstep(float(0.85), float(1.0), elevation))
+
+    material.colorNode = mix(finalColor, sideColor, sideMask)
+  }
 
   return material
 }
@@ -156,7 +166,7 @@ function buildTerrainGeometry(demData, { terrainWidth, targetHeight, terrainDept
       topPositions[vi * 3 + 2] = row * stepZ - halfD
       topNormElevs[vi] = getNormElev(col, row)
       topUvs[vi * 2] = col / (cols - 1)
-      topUvs[vi * 2 + 1] = 1 - row / (rows - 1)
+      topUvs[vi * 2 + 1] = row / (rows - 1)
     }
   }
 
@@ -323,6 +333,7 @@ function buildTerrainGeometry(demData, { terrainWidth, targetHeight, terrainDept
 
 function TerrainLayer({
   url,
+  texture: texturePath = null,
   scale = DEFAULT_SCALE,
   colors = DEFAULT_COLORS,
   smooth = 0,
@@ -331,6 +342,19 @@ function TerrainLayer({
   position = [0, 0, 0],
 }) {
   const [demData, setDemData] = useState(null)
+  const [texMap, setTexMap] = useState(null)
+
+  useEffect(() => {
+    if (!texturePath) { setTexMap(null); return }
+    const loader = new TextureLoader()
+    loader.load(texturePath, (tex) => {
+      tex.colorSpace = SRGBColorSpace
+      setTexMap(tex)
+    })
+    return () => {
+      setTexMap((prev) => { prev?.dispose(); return null })
+    }
+  }, [texturePath])
 
   const mergedColors = useMemo(
     () => colors === DEFAULT_COLORS ? DEFAULT_COLORS : { ...DEFAULT_COLORS, ...colors },
@@ -411,7 +435,7 @@ function TerrainLayer({
     })
   }, [demData, scale, smooth, heightScale, baseHeight])
 
-  const material = useMemo(() => createTerrainMaterial(mergedColors), [mergedColors])
+  const material = useMemo(() => createTerrainMaterial(mergedColors, texMap), [mergedColors, texMap])
 
   useEffect(() => {
     return () => {

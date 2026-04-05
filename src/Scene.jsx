@@ -83,7 +83,7 @@ function Scene() {
           width={15.9}
           height={13.9}
           depth={1}
-          position={[0, 0.01, -1]}
+          position={[0, -0.01, -1]}
         />
 
 
