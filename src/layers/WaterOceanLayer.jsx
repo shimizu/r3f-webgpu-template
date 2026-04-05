@@ -57,10 +57,10 @@ const EFFECTS = {
   waveSpeed: 0.9,
 }
 
-function createWaterBoxMaterial(waterNormalsTexture) {
+function createWaterBoxMaterial(waterNormalsTexture, opacity) {
   const material = new MeshPhysicalNodeMaterial({
     transparent: true,
-    transmission: MATERIAL.transmission,
+    transmission: MATERIAL.transmission * opacity,
     thickness: MATERIAL.thickness,
     roughness: MATERIAL.roughness,
     metalness: 0,
@@ -176,7 +176,7 @@ function createWaterBoxMaterial(waterNormalsTexture) {
   // --- 透過度 ---
   const topOpacity = mix(float(0.5), float(0.75), fresnel)
   const sideOpacity = mix(float(0.92), float(0.65), depthFactor)
-  material.opacityNode = mix(sideOpacity, topOpacity, topMask)
+  material.opacityNode = mix(sideOpacity, topOpacity, topMask).mul(float(opacity))
 
   // --- 光吸収カラー ---
   material.attenuationColorNode = mix(
@@ -192,6 +192,7 @@ function WaterOceanLayer({
   width = 200,
   height = 200,
   depth = 2,
+  opacity = 1.0,
   position = [0, 0, 0],
 }) {
   const waterNormals = useLoader(TextureLoader, '/textures/waternormals.jpg')
@@ -202,8 +203,8 @@ function WaterOceanLayer({
   }, [waterNormals])
 
   const material = useMemo(
-    () => createWaterBoxMaterial(waterNormals),
-    [waterNormals]
+    () => createWaterBoxMaterial(waterNormals, opacity),
+    [waterNormals, opacity]
   )
 
   useEffect(() => {
