@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { MapControls } from '@react-three/drei'
 
-import SceneEffects from './effects/SceneEffects'
 import LightingRig from './LightingRig'
+import SceneEffects from './effects/SceneEffects'
 import MaterialSamplesLayer from './layers/MaterialSamplesLayer'
 import RainLayer from './layers/RainLayer'
 import SkyLayer from './layers/SkyLayer'
@@ -118,7 +118,7 @@ function Scene() {
 
         <axesHelper args={[10]} />
 
-        {/* ポストプロセッシング: DoF（パフォーマンス確認のため一時無効化）
+        {/* ポストプロセッシング: DoF（一時無効化）
         <SceneEffects />
         */}
     </>
