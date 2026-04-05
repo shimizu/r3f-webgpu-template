@@ -12,24 +12,24 @@ import {
   vec3,
 } from 'three/tsl'
 
-// --- 空のグラデーション（曇天・雨天） ---
+// --- 空のグラデーション（室内・卓上） ---
 const SKY_COLORS = {
-  zenith: '#4a5568',       // 天頂の暗い灰色
-  horizon: '#8090a0',      // 地平線のくすんだ青灰
-  ground: '#505860',       // 地平線以下の暗いグレー
+  zenith: '#c8c0b8',       // 天井の暖かいベージュ
+  horizon: '#a09890',      // 壁面のくすんだベージュ
+  ground: '#706860',       // 床面の暗いブラウン
 }
 
-// --- 雲パラメータ（厚い雨雲） ---
+// --- 雲パラメータ（室内なので控えめなテクスチャ感） ---
 const CLOUD = {
-  coverage: 0.82,          // 雲量 (高め = 厚い曇天)
-  sharpness: 0.15,         // 輪郭ぼんやり (雨雲は境界が曖昧)
-  baseScale: 1.6,          // やや大きな雲塊
-  detailScale: 3.0,        // 細部ノイズ
-  speed: 0.015,            // ゆっくり流れる
-  brightness: 0.65,        // 暗めの雲
-  shadowStrength: 0.35,    // 雲の陰影を強めに
-  color: '#b0b8c0',        // 灰色がかった雲
-  shadowColor: '#5a6470',  // 暗い影色
+  coverage: 0.3,           // 雲量を下げて天井のムラ程度に
+  sharpness: 0.1,          // ぼんやり
+  baseScale: 1.2,          // 大きなムラ
+  detailScale: 2.0,        // 細部
+  speed: 0.005,            // ほぼ動かない
+  brightness: 0.85,        // 明るめ
+  shadowStrength: 0.1,     // 陰影は控えめ
+  color: '#d8d0c8',        // 天井色に近い暖色
+  shadowColor: '#a09888',  // 薄い影
 }
 
 // --- ドーム設定 ---
