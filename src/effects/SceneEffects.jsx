@@ -2,54 +2,59 @@
 /*
   WebGPU ネイティブのポストプロセッシングパイプライン。
 
-  PostProcessing で ScenePass → Bloom を構築し、
-  R3F のデフォルト描画を置き換える。
+  RenderPipeline で scenePass を作成し、
+  各エフェクト（createBloom, createGodrays, createDof）を
+  チェーンして合成する。
+
+  個々のエフェクトのロジックは create*.js に分離。
 */
 import { useEffect, useMemo } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
-import { PostProcessing } from 'three/webgpu'
+import { RenderPipeline } from 'three/webgpu'
 import { pass } from 'three/tsl'
-import { bloom } from 'three/addons/tsl/display/BloomNode.js'
 
-// ============================================================
-// 調整用パラメータ
-// ============================================================
-const BLOOM_DEFAULTS = {
-  strength: 0.8,          // ブルームの強さ
-  radius: 0.5,            // ブルームの広がり
-  threshold: 0.5,         // この輝度以上にブルームを適用
-}
+import { createBloomPass } from './createBloom'
+import { createGodraysPass } from './createGodrays'
+// import { createDofPass } from './createDof'
 
 function SceneEffects({
-  bloomStrength = BLOOM_DEFAULTS.strength,
-  bloomRadius = BLOOM_DEFAULTS.radius,
-  bloomThreshold = BLOOM_DEFAULTS.threshold,
+  godrayLight = null,
 }) {
   const { gl: renderer, scene, camera } = useThree()
 
   const pipeline = useMemo(() => {
-    const postProcessing = new PostProcessing(renderer)
+    const rp = new RenderPipeline(renderer)
 
     const scenePass = pass(scene, camera)
     const scenePassColor = scenePass.getTextureNode()
+    const scenePassDepth = scenePass.getTextureNode('depth')
 
-    const bloomPass = bloom(scenePassColor, bloomStrength, bloomRadius, bloomThreshold)
+    // Bloom: シーンカラーに加算
+    let outputNode = scenePassColor.add(createBloomPass(scenePassColor))
 
-    // シーンカラー + ブルーム で加算合成
-    postProcessing.outputNode = scenePassColor.add(bloomPass)
+    // Godrays: ライトが渡された場合のみ有効
+    if (godrayLight) {
+      outputNode = outputNode.add(createGodraysPass(scenePassDepth, camera, godrayLight))
+    }
 
-    return { postProcessing, scenePass }
-  }, [renderer, scene, camera])
+    // DoF: 一時無効化
+    // const viewZ = scenePass.getViewZNode()
+    // outputNode = createDofPass(outputNode, viewZ)
+
+    rp.outputNode = outputNode
+
+    return { rp, scenePass }
+  }, [renderer, scene, camera, godrayLight])
 
   // レンダリング
   useFrame(() => {
-    pipeline.postProcessing.render()
+    pipeline.rp.render()
   }, 1)
 
   // クリーンアップ
   useEffect(() => {
     return () => {
-      pipeline.postProcessing.dispose()
+      pipeline.rp.dispose()
     }
   }, [pipeline])
 

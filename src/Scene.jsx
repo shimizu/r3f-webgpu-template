@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { MapControls } from '@react-three/drei'
 
 import LightingRig from './LightingRig'
@@ -36,13 +36,14 @@ import WaterOceanLayer from './layers/WaterOceanLayer'
 */
 function Scene() {
   const [heightInfo, setHeightInfo] = useState(null)
+  const directionalLightRef = useRef(null)
 
   return (
     <>
       {/* 雨天フォグ: 遠景を霞ませてジオラマの囲まれた空気感を出す */}
       <fog attach="fog" args={['#6a7580', 20, 60]} />
 
-      <LightingRig />
+      <LightingRig ref={directionalLightRef} />
       <SkyLayer />
 
       {/* カメラ操作。
@@ -128,8 +129,8 @@ function Scene() {
           />
         </mesh>
 
-        {/* ポストプロセッシング: Bloom */}
-        <SceneEffects />
+        {/* ポストプロセッシング: Bloom + Godrays */}
+        <SceneEffects godrayLight={directionalLightRef.current} />
     </>
   )
 }

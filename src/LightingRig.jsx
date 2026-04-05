@@ -1,12 +1,15 @@
-function LightingRig() {
+import { forwardRef } from 'react'
+
+const LightingRig = forwardRef(function LightingRig(props, ref) {
   return (
     <>
       {/* 環境光: 暗めに落として影の深さを稼ぐ */}
       <ambientLight intensity={0.5} color='#6a7888' />
       <hemisphereLight args={['#5a6878', '#2a2a34', 0.15]} position={[0, 12, 0]} />
 
-      {/* メインキー: 弱いディレクショナルで曇天の拡散光 */}
+      {/* メインキー: 弱いディレクショナルで曇天の拡散光（godrays 用に ref 公開） */}
       <directionalLight
+        ref={ref}
         castShadow
         color='#8898a8'
         intensity={0.25}
@@ -62,6 +65,6 @@ function LightingRig() {
       <pointLight color='#4060a0' intensity={1.5} distance={20} position={[-3, 3, -10]} />
     </>
   )
-}
+})
 
 export default LightingRig
