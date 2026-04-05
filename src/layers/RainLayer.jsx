@@ -1,7 +1,7 @@
 /* eslint-disable react/no-unknown-property, react/prop-types */
 import { useEffect, useMemo, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
-import { DoubleSide, InstancedMesh, Matrix4, PlaneGeometry } from 'three'
+import { AdditiveBlending, DoubleSide, InstancedMesh, Matrix4, PlaneGeometry } from 'three'
 import { MeshBasicNodeMaterial } from 'three/webgpu'
 import {
   Fn,
@@ -23,16 +23,21 @@ import { createRainComputeRunner } from '../compute/runRainCompute'
 // 調整用パラメータ
 // ============================================================
 
-// ストリーク描画
+// --- 雨ストリーク描画 ---
 const STREAK_LENGTH = 0.35          // 速度方向の引き伸ばし量
 const STREAK_WIDTH = 0.003          // 雨粒の横幅
-const STREAK_MIN_LENGTH = 0.02      // 最小ストリーク長（速度ゼロでも見える）
+const STREAK_MIN_LENGTH = 0.02      // 最小ストリーク長
 const STREAK_MAX_LENGTH = 0.5       // 最大ストリーク長
 
-// 透明度
+// --- 雨の透明度 ---
 const OPACITY_BASE = 0.35           // 基本不透明度
-const OPACITY_SPEED_BOOST = 0.25    // 速度による不透明度の追加分
-const OPACITY_SPEED_REF = 0.1       // この速度で opacity_boost が最大になる
+const OPACITY_SPEED_BOOST = 0.25    // 速度による追加分
+const OPACITY_SPEED_REF = 0.1       // boost が最大になる速度
+
+// --- スプラッシュ描画 ---
+const SPLASH_SIZE = 0.01            // スプラッシュ粒子の基本サイズ
+const SPLASH_OPACITY = 0.4          // スプラッシュの不透明度
+const SPLASH_COLOR = '#ccddff'      // スプラッシュの色
 
 function RainLayer({
   position = [0, 0, 0],
@@ -62,86 +67,117 @@ function RainLayer({
       terrainDepth: heightInfo?.terrainDepth ?? 0,
     })
 
-    // 単位平面: Y 方向 [-0.5, 0.5] を速度方向に引き伸ばし、
-    //          X 方向 [-0.5, 0.5] を横幅として使う
-    const geometry = new PlaneGeometry(1, 1)
-    const material = new MeshBasicNodeMaterial({
+    // ======== 雨メッシュ ========
+    const rainGeometry = new PlaneGeometry(1, 1)
+    const rainMaterial = new MeshBasicNodeMaterial({
       color: '#aaccff',
       transparent: true,
       depthWrite: false,
       side: DoubleSide,
     })
 
-    const mesh = new InstancedMesh(geometry, material, system.particleCount)
+    const rainMesh = new InstancedMesh(rainGeometry, rainMaterial, system.particleCount)
     const identityMatrix = new Matrix4()
     for (let i = 0; i < system.particleCount; i++) {
-      mesh.setMatrixAt(i, identityMatrix)
+      rainMesh.setMatrixAt(i, identityMatrix)
     }
 
-    // --- 速度方向ストリーク vertex shader ---
-    // 各パーティクルの velocity を取得し、
-    // ビュー空間で速度方向にクアッドを引き伸ばす。
-    // これにより速い雨は長い線に、遅い雨は短い点になる。
+    // 速度方向ストリーク vertex shader
     const posNode = system.positionNode.element(instanceIndex)
     const velNode = system.velocityNode.element(instanceIndex)
 
-    material.vertexNode = Fn(() => {
-      // パーティクルのワールド位置
+    rainMaterial.vertexNode = Fn(() => {
       const worldPos = modelWorldMatrix.mul(vec4(posNode, 1.0))
-
-      // ビュー空間に変換
       const viewPos = cameraViewMatrix.mul(worldPos)
 
-      // 速度をビュー空間に変換（方向のみ、平行移動なし）
       const velWorld = vec4(velNode, 0.0)
       const velView = cameraViewMatrix.mul(velWorld)
 
-      // 速度の大きさ
       const speed = length(velView.xyz).toVar()
-
-      // 速度方向を正規化（ゼロ除算防止）
       const velDir = normalize(velView.xyz.add(0.0001)).toVar()
 
-      // ストリーク長: 速度に比例、min/max でクランプ
       const streakLen = speed.mul(STREAK_LENGTH)
         .max(float(STREAK_MIN_LENGTH))
         .min(float(STREAK_MAX_LENGTH))
         .toVar()
 
-      // クアッドのローカル座標: Y が速度方向、X が横方向
-      const localY = positionLocal.y  // -0.5 〜 0.5
-      const localX = positionLocal.x  // -0.5 〜 0.5
+      const localY = positionLocal.y
+      const localX = positionLocal.x
 
-      // 速度方向に垂直なビュー空間ベクトル（Z 軸との外積で横方向を得る）
-      const sideDir = normalize(velDir.cross(velView.xyz.normalize().add(0.001).cross(velDir).add(
-        // フォールバック: 速度がカメラ方向と平行な場合
-        normalize(velDir.cross(velDir.add(0.1)))
-      ).normalize())).toVar()
-
-      // もっとシンプルに: ビュー空間の Z 軸（カメラ前方）と速度方向の外積
       const right = normalize(velDir.cross(vec4(0, 0, 1, 0).xyz)).toVar()
 
-      // 頂点をオフセット: 速度方向にストレッチ + 横幅
       const offset = velDir.mul(localY).mul(streakLen)
         .add(right.mul(localX).mul(STREAK_WIDTH))
 
       const finalViewPos = viewPos.add(vec4(offset, 0.0))
-
       return cameraProjectionMatrix.mul(finalViewPos)
     })()
 
-    // --- 速度ベースの透明度 ---
-    // 速い雨粒ほど明るく見える
-    material.opacityNode = Fn(() => {
+    rainMaterial.opacityNode = Fn(() => {
       const velForOpacity = system.velocityNode.element(instanceIndex)
       const speed = length(velForOpacity)
       const speedFactor = smoothstep(float(0), float(OPACITY_SPEED_REF), speed)
       return float(OPACITY_BASE).add(speedFactor.mul(OPACITY_SPEED_BOOST))
     })()
 
-    mesh.frustumCulled = false
+    rainMesh.frustumCulled = false
 
-    return { geometry, material, mesh, system }
+    // ======== スプラッシュメッシュ ========
+    const splashGeometry = new PlaneGeometry(1, 1)
+    const splashMaterial = new MeshBasicNodeMaterial({
+      color: SPLASH_COLOR,
+      transparent: true,
+      depthWrite: false,
+      side: DoubleSide,
+      blending: AdditiveBlending,
+    })
+
+    const splashMesh = new InstancedMesh(splashGeometry, splashMaterial, system.particleCount)
+    for (let i = 0; i < system.particleCount; i++) {
+      splashMesh.setMatrixAt(i, identityMatrix)
+    }
+
+    // スプラッシュ vertex shader: billboarding + 寿命ベースのサイズ変化
+    const splashPosNode = system.splashPosNode.element(instanceIndex)
+    const splashLifeNode = system.splashLifeNode.element(instanceIndex)
+
+    splashMaterial.vertexNode = Fn(() => {
+      const worldPos = modelWorldMatrix.mul(vec4(splashPosNode, 1.0))
+      const viewPos = cameraViewMatrix.mul(worldPos)
+
+      // 寿命に応じたサイズ: 発生直後に膨らみ、消える前に縮む
+      const life = splashLifeNode.toVar()
+      const normalizedLife = life.div(0.4).toVar() // 0〜1 (maxLife=0.4)
+      // 急速に膨らんでゆっくり縮む: sin カーブ
+      const sizeCurve = normalizedLife.mul(3.14159).sin().toVar()
+      const size = float(SPLASH_SIZE).mul(sizeCurve).toVar()
+
+      // ビュー空間 billboarding
+      const localX = positionLocal.x
+      const localY = positionLocal.y
+
+      const offsetX = localX.mul(size)
+      const offsetY = localY.mul(size)
+
+      const finalViewPos = viewPos.add(vec4(offsetX, offsetY, 0, 0))
+      return cameraProjectionMatrix.mul(finalViewPos)
+    })()
+
+    // スプラッシュ opacity: 寿命に応じてフェードアウト
+    splashMaterial.opacityNode = Fn(() => {
+      const life = system.splashLifeNode.element(instanceIndex)
+      const normalizedLife = life.div(0.4)
+      // 後半で急速にフェードアウト
+      return normalizedLife.mul(float(SPLASH_OPACITY))
+    })()
+
+    splashMesh.frustumCulled = false
+
+    return {
+      rainGeometry, rainMaterial, rainMesh,
+      splashGeometry, splashMaterial, splashMesh,
+      system,
+    }
   }, [particleCount, width, depth, topY, rainSpeed, wind, heightInfo])
 
   useEffect(() => {
@@ -150,8 +186,10 @@ function RainLayer({
 
     return () => {
       resources.system.destroy()
-      resources.geometry.dispose()
-      resources.material.dispose()
+      resources.rainGeometry.dispose()
+      resources.rainMaterial.dispose()
+      resources.splashGeometry.dispose()
+      resources.splashMaterial.dispose()
       systemRef.current = null
     }
   }, [renderer, resources])
@@ -165,7 +203,12 @@ function RainLayer({
     )
   })
 
-  return <primitive object={resources.mesh} position={position} />
+  return (
+    <group position={position}>
+      <primitive object={resources.rainMesh} />
+      <primitive object={resources.splashMesh} />
+    </group>
+  )
 }
 
 export default RainLayer
