@@ -14,12 +14,10 @@ import { RenderPipeline } from 'three/webgpu'
 import { pass } from 'three/tsl'
 
 import { createBloomPass } from './createBloom'
-import { createGodraysPass } from './createGodrays'
+// import { createGodraysPass } from './createGodrays'
 // import { createDofPass } from './createDof'
 
-function SceneEffects({
-  godrayLight = null,
-}) {
+function SceneEffects() {
   const { gl: renderer, scene, camera } = useThree()
 
   const pipeline = useMemo(() => {
@@ -27,15 +25,13 @@ function SceneEffects({
 
     const scenePass = pass(scene, camera)
     const scenePassColor = scenePass.getTextureNode()
-    const scenePassDepth = scenePass.getTextureNode('depth')
 
     // Bloom: シーンカラーに加算
     let outputNode = scenePassColor.add(createBloomPass(scenePassColor))
 
-    // Godrays: ライトが渡された場合のみ有効
-    if (godrayLight) {
-      outputNode = outputNode.add(createGodraysPass(scenePassDepth, camera, godrayLight))
-    }
+    // Godrays: 一時無効化
+    // const scenePassDepth = scenePass.getTextureNode('depth')
+    // outputNode = outputNode.add(createGodraysPass(scenePassDepth, camera, light))
 
     // DoF: 一時無効化
     // const viewZ = scenePass.getViewZNode()
@@ -44,7 +40,7 @@ function SceneEffects({
     rp.outputNode = outputNode
 
     return { rp, scenePass }
-  }, [renderer, scene, camera, godrayLight])
+  }, [renderer, scene, camera])
 
   // レンダリング
   useFrame(() => {

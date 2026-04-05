@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import { MapControls } from '@react-three/drei'
 
 import LightingRig from './LightingRig'
@@ -6,7 +6,7 @@ import SceneEffects from './effects/SceneEffects'
 import MaterialSamplesLayer from './layers/MaterialSamplesLayer'
 import RainLayer from './layers/RainLayer'
 import SkyLayer from './layers/SkyLayer'
-import StageLayer from './layers/StageLayer'
+import GridLayer from './layers/GridLayer'
 import TerrainLayer from './layers/TerrainLayer'
 import WaterBlobLayer from './layers/WaterBlobLayer'
 import WaterBoxLayer from './layers/WaterBoxLayer'
@@ -36,14 +36,12 @@ import WaterOceanLayer from './layers/WaterOceanLayer'
 */
 function Scene() {
   const [heightInfo, setHeightInfo] = useState(null)
-  const directionalLightRef = useRef(null)
-
   return (
     <>
       {/* 雨天フォグ: 遠景を霞ませてジオラマの囲まれた空気感を出す */}
       <fog attach="fog" args={['#6a7580', 20, 60]} />
 
-      <LightingRig ref={directionalLightRef} />
+      <LightingRig />
       <SkyLayer />
 
       {/* カメラ操作。
@@ -88,7 +86,7 @@ function Scene() {
         
      */}
 
-        <StageLayer position={[0, -2, 0]} />
+        <GridLayer position={[0, -2, 0]} />
 
         <WaterOceanLayer
           width={15.9}
@@ -132,7 +130,7 @@ function Scene() {
         </mesh>
 
         {/* ポストプロセッシング: Bloom + Godrays */}
-        <SceneEffects godrayLight={directionalLightRef.current} />
+        <SceneEffects />
     </>
   )
 }
