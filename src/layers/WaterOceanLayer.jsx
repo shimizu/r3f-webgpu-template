@@ -195,7 +195,7 @@ function WaterOceanLayer({
   opacity = 1.0,
   position = [0, 0, 0],
 }) {
-  const waterNormals = useLoader(TextureLoader, '/textures/waternormals.jpg')
+  const waterNormals = useLoader(TextureLoader, './textures/waternormals.jpg')
 
   useEffect(() => {
     waterNormals.wrapS = RepeatWrapping
