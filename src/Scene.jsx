@@ -4,7 +4,7 @@ import LightingRig from './LightingRig'
 import MaterialSamplesLayer from './layers/MaterialSamplesLayer'
 import SkyLayer from './layers/SkyLayer'
 import StageLayer from './layers/StageLayer'
-import WaterBoxLayer from './layers/WaterBoxLayer'
+import WaterBlobLayer from './layers/WaterBlobLayer'
 
 /*
   このファイルの処理の流れ
@@ -54,7 +54,7 @@ function Scene() {
       <group position={[0, 0, 0]} rotation={[0, 0, 0]}>
         <StageLayer />
         <MaterialSamplesLayer />
-        <WaterBoxLayer
+        <WaterBlobLayer
           width={20}
           height={8}
           depth={2.5}
