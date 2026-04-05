@@ -55,10 +55,10 @@ function Scene() {
         <StageLayer />
         <MaterialSamplesLayer />
         <WaterBoxLayer
-          width={36}
-          height={22}
-          depth={0.5}
-          position={[0, 0.1, 0]}
+          width={20}
+          height={8}
+          depth={2.5}
+          position={[0, 0, -3]}
         />
       </group>
     </>

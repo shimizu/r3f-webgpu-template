@@ -7,7 +7,7 @@ function LightingRig() {
       <directionalLight
         castShadow
         color='#fff8ef'
-        intensity={1.8}
+        intensity={0.5}
         position={[6, 14, -12]}
         shadow-mapSize-width={2048}
         shadow-mapSize-height={2048}
@@ -29,7 +29,6 @@ function LightingRig() {
         distance={32}
         position={[-8, 7, -9]}
       />
-
       <spotLight
         color='#f8fbff'
         intensity={10}

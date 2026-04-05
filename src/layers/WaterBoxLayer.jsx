@@ -25,15 +25,15 @@ const DEFAULT_SEGMENTS = [64, 16, 64]
 
 // --- マテリアル基本パラメータ ---
 const MATERIAL = {
-  transmission: 0.25,       // 光の透過率 (0=不透明, 1=完全透過)。海水は濁りが強いので低め
-  thickness: 4.0,           // 透過計算上の仮想厚み。大きいほど吸収が強く見える
-  roughness: 0.08,          // 表面の粗さ (0=鏡面, 1=完全拡散)。海面は滑らか寄り
+  transmission: 0.75,       // 光の透過率。夏の透き通った海
+  thickness: 1.8,           // 透過計算上の仮想厚み。薄めで明るい水中に
+  roughness: 0.12,          // 表面の粗さ。夏の穏やかな海面
   ior: 1.333,               // 屈折率。水の物理値
-  attenuationDistance: 0.5,  // 光が吸収される距離。短いほど深部が暗くなる
-  attenuationColor: '#021220', // 吸収後に残る色。深い紺＝赤緑を強く吸収
-  clearcoat: 0.15,          // クリアコート層の強さ。水面の薄い光沢膜
-  clearcoatRoughness: 0.03, // クリアコートの粗さ
-  envMapIntensity: 1.5,     // 環境マップの反射強度。空の映り込みの強さ
+  attenuationDistance: 2.5,  // 光が吸収される距離。長めで明るい浅瀬感
+  attenuationColor: '#064a3e', // 吸収後に残る色。エメラルドグリーン寄り
+  clearcoat: 0.05,          // クリアコート層の強さ。水面の薄い光沢膜
+  clearcoatRoughness: 0.1,  // クリアコートの粗さ
+  envMapIntensity: 0.6,     // 環境マップの反射強度。空の映り込み控えめ
 }
 
 // --- 波パラメータ ---
@@ -66,36 +66,36 @@ const WAVE = {
 
 // --- カラーパレット ---
 const COLORS = {
-  surfaceLight: '#1a5c6e',   // 水面の明るい部分 (波の山)
-  surfaceDark: '#0e3d52',    // 水面の暗い部分 (波の谷)
-  surfaceGlint: '#2a7a6e',   // 水面のきらめき色
-  foam: '#3fb4c9',           // 波頭の泡の色
-  sideShallow: '#0e4a5c',    // 側面の浅い部分
-  sideDeep: '#031828',       // 側面の深い部分 (ほぼ黒紺)
-  caustic: '#1a7080',        // コースティクス (水中の集光) の色
-  sideRipple: '#0a3848',     // 側面の波紋色
-  reflection: '#02160d',     // フレネル反射色 (空の青み)
-  attenuationShallow: '#0a3040', // 光吸収色 (浅部)
-  attenuationDeep: '#010a14',    // 光吸収色 (深部、ほぼ黒)
+  surfaceLight: '#48c9b0',   // 水面の明るい部分 (波の山)。鮮やかなターコイズ
+  surfaceDark: '#1a8a7a',    // 水面の暗い部分 (波の谷)。深めのエメラルド
+  surfaceGlint: '#e0f7f0',   // 水面のきらめき色。白に近い淡緑
+  foam: '#e8fcf8',           // 波頭の泡の色。白い泡
+  sideShallow: '#2eb8a0',    // 側面の浅い部分。明るいターコイズ
+  sideDeep: '#0c5c52',       // 側面の深い部分。濃いエメラルド
+  caustic: '#5ee8c8',        // コースティクス (水中の集光) の色。明るい緑
+  sideRipple: '#1a9080',     // 側面の波紋色
+  reflection: '#87ceeb',     // フレネル反射色。夏の空の青
+  attenuationShallow: '#0a6858', // 光吸収色 (浅部)
+  attenuationDeep: '#032820',    // 光吸収色 (深部)
 }
 
 // --- エフェクト強度 ---
 const EFFECTS = {
-  causticIntensity: 0.25,    // コースティクスの明るさ (0=なし)
-  foamThresholdMin: 0.22,    // 泡が出始める波高の下限
-  foamThresholdMax: 0.4,     // 泡が最大になる波高の上限
-  foamStrength: 0.7,         // 泡の不透明度 (0=透明, 1=真っ白)
-  glintStrength: 0.2,        // 水面きらめきの強さ
-  fresnelPower: 3.0,         // フレネル指数。大きいほど正面は透明・端は反射が急峻
-  fresnelStrength: 0.6,      // フレネル反射の最大強度
+  causticIntensity: 0.35,    // コースティクスの明るさ。夏の強い陽光
+  foamThresholdMin: 0.18,    // 泡が出始める波高の下限。少し早めに泡立つ
+  foamThresholdMax: 0.35,    // 泡が最大になる波高の上限
+  foamStrength: 0.8,         // 泡の不透明度。白い波頭を強調
+  glintStrength: 0.35,       // 水面きらめきの強さ。夏の陽光の反射
+  fresnelPower: 2.5,         // フレネル指数。やや緩やかに
+  fresnelStrength: 0.45,     // フレネル反射の最大強度。控えめに空を映す
 }
 
 // --- 透過度 ---
 const OPACITY = {
-  bodyMin: 0.88,  // 側面の最小不透明度
-  bodyMax: 0.96,  // 側面の最大不透明度
-  topMin: 0.78,   // 上面の最小不透明度 (正面から見た時)
-  topMax: 0.92,   // 上面の最大不透明度 (斜めから見た時、フレネル連動)
+  bodyMin: 0.75,  // 側面の最小不透明度
+  bodyMax: 0.9,   // 側面の最大不透明度
+  topMin: 0.35,   // 上面の最小不透明度 (正面から見た時)。透き通った海面
+  topMax: 0.65,   // 上面の最大不透明度 (斜めから見た時、フレネル連動)
 }
 
 function createWaveHeightNode() {
