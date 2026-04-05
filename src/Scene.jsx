@@ -2,9 +2,13 @@ import { useState } from 'react'
 import { MapControls } from '@react-three/drei'
 
 import LightingRig from './LightingRig'
+import MaterialSamplesLayer from './layers/MaterialSamplesLayer'
 import RainLayer from './layers/RainLayer'
 import SkyLayer from './layers/SkyLayer'
+import StageLayer from './layers/StageLayer'
 import TerrainLayer from './layers/TerrainLayer'
+import WaterBlobLayer from './layers/WaterBlobLayer'
+import WaterBoxLayer from './layers/WaterBoxLayer'
 import WaterOceanLayer from './layers/WaterOceanLayer'
 
 /*

@@ -298,6 +298,7 @@ export function createRainComputeRunner({
     particleCount,
     positionAttribute,
     positionNode,
+    velocityNode,
 
     init(renderer) {
       renderer.compute(computeNode)
