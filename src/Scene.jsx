@@ -38,8 +38,9 @@ function Scene() {
   const [heightInfo, setHeightInfo] = useState(null)
   return (
     <>
-      {/* 雨天フォグ: 遠景を霞ませてジオラマの囲まれた空気感を出す */}
+      {/* 雨天フォグ: 一時無効化
       <fog attach="fog" args={['#6a7580', 20, 60]} />
+      */}
 
       <LightingRig />
       <SkyLayer />
@@ -86,7 +87,7 @@ function Scene() {
         
      */}
 
-        <GridLayer position={[0, -2, 0]} />
+        <GridLayer position={[0, -1, 0]} />
 
         <WaterOceanLayer
           width={15.9}

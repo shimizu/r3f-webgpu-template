@@ -18,9 +18,9 @@ import {
 // 調整用パラメータ
 // ============================================================
 const GRID_DEFAULTS = {
-  size: 200,              // 平面のサイズ
-  gridScale: 1.0,         // メイングリッド間隔（ワールド単位）
-  subGridScale: 0.2,      // サブグリッド間隔
+  size: 400,              // 平面のサイズ
+  gridScale: 3.0,         // メイングリッド間隔（ワールド単位）
+  subGridScale: 1.0,      // サブグリッド間隔
   lineWidth: 0.02,        // メインライン幅
   subLineWidth: 0.01,     // サブライン幅
   baseColor: '#2a6e3f',   // 工作シートの緑
