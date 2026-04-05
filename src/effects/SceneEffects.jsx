@@ -2,29 +2,28 @@
 /*
   WebGPU ネイティブのポストプロセッシングパイプライン。
 
-  PostProcessing で ScenePass → DoF を構築し、
+  PostProcessing で ScenePass → Bloom を構築し、
   R3F のデフォルト描画を置き換える。
-  将来 Bloom 等を追加する際もここに集約する。
 */
 import { useEffect, useMemo } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import { PostProcessing } from 'three/webgpu'
 import { pass } from 'three/tsl'
-import { dof } from 'three/addons/tsl/display/DepthOfFieldNode.js'
+import { bloom } from 'three/addons/tsl/display/BloomNode.js'
 
 // ============================================================
 // 調整用パラメータ
 // ============================================================
-const DOF_DEFAULTS = {
-  focusDistance: 15,    // ピント距離（ワールド単位）
-  focalLength: 10,     // ボケが始まるまでの距離幅
-  bokehScale: 1.0,     // ボケの強さ
+const BLOOM_DEFAULTS = {
+  strength: 0.8,          // ブルームの強さ
+  radius: 0.5,            // ブルームの広がり
+  threshold: 0.5,         // この輝度以上にブルームを適用
 }
 
 function SceneEffects({
-  focusDistance = DOF_DEFAULTS.focusDistance,
-  focalLength = DOF_DEFAULTS.focalLength,
-  bokehScale = DOF_DEFAULTS.bokehScale,
+  bloomStrength = BLOOM_DEFAULTS.strength,
+  bloomRadius = BLOOM_DEFAULTS.radius,
+  bloomThreshold = BLOOM_DEFAULTS.threshold,
 }) {
   const { gl: renderer, scene, camera } = useThree()
 
@@ -33,16 +32,16 @@ function SceneEffects({
 
     const scenePass = pass(scene, camera)
     const scenePassColor = scenePass.getTextureNode()
-    const viewZ = scenePass.getViewZNode()
 
-    const dofPass = dof(scenePassColor, viewZ, focusDistance, focalLength, bokehScale)
+    const bloomPass = bloom(scenePassColor, bloomStrength, bloomRadius, bloomThreshold)
 
-    postProcessing.outputNode = dofPass
+    // シーンカラー + ブルーム で加算合成
+    postProcessing.outputNode = scenePassColor.add(bloomPass)
 
     return { postProcessing, scenePass }
   }, [renderer, scene, camera])
 
-  // レンダリング: PostProcessing で描画
+  // レンダリング
   useFrame(() => {
     pipeline.postProcessing.render()
   }, 1)

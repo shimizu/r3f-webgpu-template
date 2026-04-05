@@ -118,9 +118,18 @@ function Scene() {
 
         <axesHelper args={[10]} />
 
-        {/* ポストプロセッシング: DoF（一時無効化）
+        {/* ブルーム確認用: 高 emissive の光る球体 */}
+        <mesh position={[0, 3, 0]}>
+          <sphereGeometry args={[0.5, 32, 32]} />
+          <meshStandardMaterial
+            color='#ff6600'
+            emissive='#ff6600'
+            emissiveIntensity={5}
+          />
+        </mesh>
+
+        {/* ポストプロセッシング: Bloom */}
         <SceneEffects />
-        */}
     </>
   )
 }
