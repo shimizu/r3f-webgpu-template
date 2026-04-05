@@ -24,6 +24,7 @@ function StageLayer({
   columns = 16,
   rows = 10,
   tileSize = 2.2,
+  position = [0, 0, 0],
 }) {
   const tileMeshRef = useRef(null)
   const floorWidth = columns * tileSize
@@ -52,7 +53,7 @@ function StageLayer({
   }, [tileData])
 
   return (
-    <group>
+    <group position={position}>
       <mesh receiveShadow position={[0, -0.65, 0]}>
         <boxGeometry args={[floorWidth + 0.8, 1.3, floorHeight + 0.8]} />
         <meshStandardMaterial color='#757575' roughness={0.86} metalness={0.02} />

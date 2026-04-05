@@ -88,6 +88,8 @@ function Scene() {
         
      */}
 
+        <StageLayer position={[0, -2, 0]} />
+
         <WaterOceanLayer
           width={15.9}
           height={13.9}
