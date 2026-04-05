@@ -62,9 +62,10 @@ function Scene() {
           position={[0, 0, -3]}
         /> */}
         <WaterOceanLayer
-          width={30}
-          height={30}
-          position={[0, 0, 0]}
+          width={10}
+          height={10}
+          depth={2}
+          position={[0, 5, 0]}
         />
       </group>
     </>
