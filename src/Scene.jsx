@@ -52,8 +52,7 @@ function Scene() {
         <boxGeometry  args={[10,10,10]}/>
         <meshNormalMaterial/>
       </mesh>        
-      */}
-
+ 
       <group position={[0, 0, 0]} rotation={[0, 0, 0]}>
         <StageLayer />
         <MaterialSamplesLayer />
@@ -69,14 +68,34 @@ function Scene() {
           depth={6}
           position={[0, 2, -6]}
         />
-        <WaterOceanLayer
-          width={8}
-          height={8}
+        </group>
+
+                <WaterOceanLayer
+          width={15.9}
+          height={13.9}
           depth={2}
-          position={[10, 2, -6]}
+          position={[0, 0, 5]}
         />
-        <TerrainLayer position={[0, 5, 6]} />
-      </group>
+        
+     */}
+
+        <WaterOceanLayer
+          width={15.9}
+          height={13.9}
+          depth={1}
+          position={[0, 0.01, 5]}
+        />
+
+
+
+        <TerrainLayer 
+          url="./dem/output_GEBCOIceTopo.tif" 
+          texture="./dem/output_GEBCOIceTopo.png"
+          heightScale={0.5}
+          baseHeight={1}
+          smooth={1} 
+          position={[0, 0, 6]} 
+        />
     </>
   )
 }

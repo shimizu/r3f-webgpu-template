@@ -1,7 +1,7 @@
 function LightingRig() {
   return (
     <>
-      <ambientLight intensity={0.08} color='#f4f1eb' />
+      <ambientLight intensity={0.8} color='#f4f1eb' />
       <hemisphereLight args={['#d6d3cf', '#4e4e4e', 0.55]} position={[0, 12, 0]} />
 
       <directionalLight

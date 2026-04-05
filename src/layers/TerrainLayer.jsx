@@ -8,16 +8,12 @@ import {
   mix,
   smoothstep,
 } from 'three/tsl'
-import { fromUrl } from 'geotiff'
+import { fromArrayBuffer } from 'geotiff'
 
-const DEM_URL = '/dem/output_GEBCOIceTopo.tif'
-const TARGET_HEIGHT = 4.0   // 地形の高さがこのワールド単位に収まるようスケール
-const BASE_Y = -2.0         // 側面・底面の下端 Y 座標
-const TERRAIN_WIDTH = 16
-const TERRAIN_DEPTH = 16
+const DEFAULT_SCALE = [16, 4, 16] // [幅, 標高レンジ, 奥行]
+const MAX_DEM_SIZE = 512          // これを超える場合は縮小読み込み
 
-// 標高カラーランプ
-const COLORS = {
+const DEFAULT_COLORS = {
   deepOcean: '#0a1a3a',
   shallowOcean: '#1a6a8a',
   shore: '#c2b280',
@@ -28,7 +24,7 @@ const COLORS = {
   side: '#3a2a1a',
 }
 
-function createTerrainMaterial() {
+function createTerrainMaterial(colors) {
   const material = new MeshPhysicalNodeMaterial({
     roughness: 0.85,
     metalness: 0.0,
@@ -37,58 +33,109 @@ function createTerrainMaterial() {
 
   const elevation = attribute('aElevation', 'float')
 
-  const c1 = mix(color(COLORS.deepOcean), color(COLORS.shallowOcean),
+  const c1 = mix(color(colors.deepOcean), color(colors.shallowOcean),
     smoothstep(float(0.0), float(0.3), elevation))
-  const c2 = mix(c1, color(COLORS.shore),
+  const c2 = mix(c1, color(colors.shore),
     smoothstep(float(0.3), float(0.4), elevation))
-  const c3 = mix(c2, color(COLORS.lowland),
+  const c3 = mix(c2, color(colors.lowland),
     smoothstep(float(0.4), float(0.5), elevation))
-  const c4 = mix(c3, color(COLORS.highland),
+  const c4 = mix(c3, color(colors.highland),
     smoothstep(float(0.5), float(0.7), elevation))
-  const c5 = mix(c4, color(COLORS.mountain),
+  const c5 = mix(c4, color(colors.mountain),
     smoothstep(float(0.7), float(0.85), elevation))
-  const finalColor = mix(c5, color(COLORS.peak),
+  const finalColor = mix(c5, color(colors.peak),
     smoothstep(float(0.85), float(1.0), elevation))
 
-  // 側面マスク: aElevation < 0 の場合は側面色
   const sideMask = attribute('aSideMask', 'float')
-  const surfaceColor = mix(finalColor, color(COLORS.side), sideMask)
+  const surfaceColor = mix(finalColor, color(colors.side), sideMask)
 
   material.colorNode = surfaceColor
 
   return material
 }
 
+// 2D ガウシアンブラー (分離カーネル: 水平→垂直)
+function gaussianBlur(data, width, height, radius) {
+  if (radius <= 0) return data
+
+  // σ = radius / 2 でカーネル生成
+  const sigma = radius / 2
+  const kernelSize = radius * 2 + 1
+  const kernel = new Float32Array(kernelSize)
+  let sum = 0
+  for (let i = 0; i < kernelSize; i++) {
+    const x = i - radius
+    kernel[i] = Math.exp(-(x * x) / (2 * sigma * sigma))
+    sum += kernel[i]
+  }
+  for (let i = 0; i < kernelSize; i++) kernel[i] /= sum
+
+  const temp = new Float32Array(data.length)
+  const out = new Float32Array(data.length)
+
+  // 水平パス
+  for (let row = 0; row < height; row++) {
+    for (let col = 0; col < width; col++) {
+      let val = 0
+      for (let k = -radius; k <= radius; k++) {
+        const sc = Math.min(Math.max(col + k, 0), width - 1)
+        val += data[row * width + sc] * kernel[k + radius]
+      }
+      temp[row * width + col] = val
+    }
+  }
+
+  // 垂直パス
+  for (let row = 0; row < height; row++) {
+    for (let col = 0; col < width; col++) {
+      let val = 0
+      for (let k = -radius; k <= radius; k++) {
+        const sr = Math.min(Math.max(row + k, 0), height - 1)
+        val += temp[sr * width + col] * kernel[k + radius]
+      }
+      out[row * width + col] = val
+    }
+  }
+
+  return out
+}
+
 // 上面・側面・底面を持つ地形ジオメトリを構築
-function buildTerrainGeometry(demData) {
+function buildTerrainGeometry(demData, { terrainWidth, targetHeight, terrainDepth, smooth, heightScale: hScale, baseHeight }) {
   const { values, width, height, nodata } = demData
   const cols = width
   const rows = height
+  const baseY = -baseHeight
+
+  // NODATA を 0 に置換した作業用配列
+  const raw = new Float32Array(values.length)
+  for (let i = 0; i < values.length; i++) {
+    raw[i] = values[i] === nodata ? 0 : values[i]
+  }
+
+  // ガウシアンブラー適用
+  const blurred = gaussianBlur(raw, cols, rows, smooth)
 
   // 標高の min/max 算出
   let minElev = Infinity
   let maxElev = -Infinity
-  for (let i = 0; i < values.length; i++) {
-    const v = values[i]
-    if (v !== nodata) {
-      if (v < minElev) minElev = v
-      if (v > maxElev) maxElev = v
-    }
+  for (let i = 0; i < blurred.length; i++) {
+    const v = blurred[i]
+    if (v < minElev) minElev = v
+    if (v > maxElev) maxElev = v
   }
   const elevRange = maxElev - minElev || 1
-  const heightScale = TARGET_HEIGHT / elevRange
+  const elevToWorld = (targetHeight / elevRange) * hScale
 
-  // DEM から標高値を取得 (行反転: GeoTIFF は北→南)
+  // ブラー済み DEM から標高値を取得 (行反転: GeoTIFF は北→南)
   function getElev(col, row) {
     const demRow = rows - 1 - row
-    const v = values[demRow * cols + col]
-    return (v === nodata ? 0 : v) * heightScale
+    return blurred[demRow * cols + col] * elevToWorld
   }
 
   function getNormElev(col, row) {
     const demRow = rows - 1 - row
-    const v = values[demRow * cols + col]
-    return v === nodata ? 0 : (v - minElev) / elevRange
+    return (blurred[demRow * cols + col] - minElev) / elevRange
   }
 
   // --- 上面 ---
@@ -97,10 +144,10 @@ function buildTerrainGeometry(demData) {
   const topNormElevs = new Float32Array(topVertCount)
   const topSideMask = new Float32Array(topVertCount) // 全て 0
 
-  const stepX = TERRAIN_WIDTH / (cols - 1)
-  const stepZ = TERRAIN_DEPTH / (rows - 1)
-  const halfW = TERRAIN_WIDTH / 2
-  const halfD = TERRAIN_DEPTH / 2
+  const stepX = terrainWidth / (cols - 1)
+  const stepZ = terrainDepth / (rows - 1)
+  const halfW = terrainWidth / 2
+  const halfD = terrainDepth / 2
 
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols; col++) {
@@ -174,7 +221,7 @@ function buildTerrainGeometry(demData) {
     // 下端頂点
     const li = i * 2 + 1
     sidePositions[li * 3] = x
-    sidePositions[li * 3 + 1] = BASE_Y
+    sidePositions[li * 3 + 1] = baseY
     sidePositions[li * 3 + 2] = z
 
     sideNormElevs[ui] = getNormElev(col, row)
@@ -206,10 +253,10 @@ function buildTerrainGeometry(demData) {
   // --- 底面 ---
   // 4頂点の単純な平面
   const bottomPositions = new Float32Array([
-    -halfW, BASE_Y, -halfD,
-    halfW, BASE_Y, -halfD,
-    halfW, BASE_Y, halfD,
-    -halfW, BASE_Y, halfD,
+    -halfW, baseY, -halfD,
+    halfW, baseY, -halfD,
+    halfW, baseY, halfD,
+    -halfW, baseY, halfD,
   ])
   const bottomNormElevs = new Float32Array(4)
   const bottomSideMask = new Float32Array([1, 1, 1, 1])
@@ -266,19 +313,69 @@ function buildTerrainGeometry(demData) {
   return geometry
 }
 
-function TerrainLayer({ position = [0, 0, 0] }) {
+function TerrainLayer({
+  url,
+  scale = DEFAULT_SCALE,
+  colors = DEFAULT_COLORS,
+  smooth = 0,
+  heightScale = 1.0,
+  baseHeight = 2.0,
+  position = [0, 0, 0],
+}) {
   const [demData, setDemData] = useState(null)
 
+  const mergedColors = useMemo(
+    () => colors === DEFAULT_COLORS ? DEFAULT_COLORS : { ...DEFAULT_COLORS, ...colors },
+    [colors]
+  )
+
   useEffect(() => {
+    if (!url) return
     let ignore = false
 
     async function loadDEM() {
-      const tiff = await fromUrl(DEM_URL)
+      const response = await fetch(url)
+      const arrayBuffer = await response.arrayBuffer()
+      const tiff = await fromArrayBuffer(arrayBuffer)
       const image = await tiff.getImage()
-      const rasters = await image.readRasters()
-      const width = image.getWidth()
-      const height = image.getHeight()
+      const fullWidth = image.getWidth()
+      const fullHeight = image.getHeight()
       const nodata = image.getGDALNoData()
+
+      let rasters, width, height
+
+      if (fullWidth > MAX_DEM_SIZE || fullHeight > MAX_DEM_SIZE) {
+        const imageCount = await tiff.getImageCount()
+
+        if (imageCount > 1) {
+          // COG: tiff.readRasters で最適な overview を自動選択
+          const ratio = Math.max(fullWidth, fullHeight) / MAX_DEM_SIZE
+          const targetW = Math.round(fullWidth / ratio)
+          const targetH = Math.round(fullHeight / ratio)
+          rasters = await tiff.readRasters({ width: targetW, height: targetH })
+          width = rasters.width
+          height = rasters.height
+          console.log(
+            `TerrainLayer: COG detected (${imageCount} images). ` +
+            `Downsampled ${fullWidth}x${fullHeight} → ${width}x${height}`
+          )
+        } else {
+          // 非 COG: image.readRasters の resample で縮小
+          const ratio = Math.max(fullWidth, fullHeight) / MAX_DEM_SIZE
+          const targetW = Math.round(fullWidth / ratio)
+          const targetH = Math.round(fullHeight / ratio)
+          rasters = await image.readRasters({ width: targetW, height: targetH })
+          width = rasters.width
+          height = rasters.height
+          console.log(
+            `TerrainLayer: Large DEM resampled ${fullWidth}x${fullHeight} → ${width}x${height}`
+          )
+        }
+      } else {
+        rasters = await image.readRasters()
+        width = fullWidth
+        height = fullHeight
+      }
 
       if (!ignore) {
         setDemData({
@@ -292,14 +389,21 @@ function TerrainLayer({ position = [0, 0, 0] }) {
 
     loadDEM().catch((err) => console.error('DEM load failed:', err))
     return () => { ignore = true }
-  }, [])
+  }, [url])
 
   const geometry = useMemo(() => {
     if (!demData) return null
-    return buildTerrainGeometry(demData)
-  }, [demData])
+    return buildTerrainGeometry(demData, {
+      terrainWidth: scale[0],
+      targetHeight: scale[1],
+      terrainDepth: scale[2],
+      smooth,
+      heightScale,
+      baseHeight,
+    })
+  }, [demData, scale, smooth, heightScale, baseHeight])
 
-  const material = useMemo(() => createTerrainMaterial(), [])
+  const material = useMemo(() => createTerrainMaterial(mergedColors), [mergedColors])
 
   useEffect(() => {
     return () => {
@@ -307,6 +411,11 @@ function TerrainLayer({ position = [0, 0, 0] }) {
       material?.dispose()
     }
   }, [geometry, material])
+
+  if (!url) {
+    console.error('TerrainLayer: url prop is required')
+    return null
+  }
 
   if (!geometry) return null
 
