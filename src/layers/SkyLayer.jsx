@@ -12,24 +12,24 @@ import {
   vec3,
 } from 'three/tsl'
 
-// --- 空のグラデーション ---
+// --- 空のグラデーション（曇天・雨天） ---
 const SKY_COLORS = {
-  zenith: '#1a5cb0',       // 天頂の濃い青
-  horizon: '#87c0e8',      // 地平線の明るい青
-  ground: '#6a7a88',       // 地平線以下のグレー
+  zenith: '#4a5568',       // 天頂の暗い灰色
+  horizon: '#8090a0',      // 地平線のくすんだ青灰
+  ground: '#505860',       // 地平線以下の暗いグレー
 }
 
-// --- 雲パラメータ ---
+// --- 雲パラメータ（厚い雨雲） ---
 const CLOUD = {
-  coverage: 0.45,          // 雲量 (0=快晴, 1=曇天)
-  sharpness: 0.3,          // 雲の輪郭の鋭さ (小さい=ふんわり, 大きい=くっきり)
-  baseScale: 2.0,          // 雲の大きさ (小さい=大きな雲)
-  detailScale: 2.5,        // 細部ノイズのスケール
-  speed: 0.02,             // 雲の流れる速度
-  brightness: 1.0,         // 雲の明るさ
-  shadowStrength: 0.25,    // 雲の陰影の強さ
-  color: '#ffffff',        // 雲の色
-  shadowColor: '#8a9ab0',  // 雲の影色
+  coverage: 0.82,          // 雲量 (高め = 厚い曇天)
+  sharpness: 0.15,         // 輪郭ぼんやり (雨雲は境界が曖昧)
+  baseScale: 1.6,          // やや大きな雲塊
+  detailScale: 3.0,        // 細部ノイズ
+  speed: 0.015,            // ゆっくり流れる
+  brightness: 0.65,        // 暗めの雲
+  shadowStrength: 0.35,    // 雲の陰影を強めに
+  color: '#b0b8c0',        // 灰色がかった雲
+  shadowColor: '#5a6470',  // 暗い影色
 }
 
 // --- ドーム設定 ---

@@ -45,24 +45,24 @@ const VELOCITY_HORIZONTAL_JITTER = 0.005 // 初期水平速度のランダム幅
 
 // --- 3D ノイズ風場 ---
 const WIND_FIELD = {
-  turbulenceScale: 0.25,     // ノイズの空間周波数（小さい = 大きなうねり）
-  turbulenceStrength: 0.012, // 乱流の強さ
-  timeScale: 0.3,            // ノイズの時間変化速度
-  yDamping: 0.3,             // Y 方向の風の減衰（重力に対して弱めにする）
-  gustFrequency: 0.4,        // 突風の時間変動周波数
-  gustStrength: 0.008,       // 突風の追加強度
-  gustSpatialScale: { x: 0.05, z: 0.07 }, // 突風の空間変動スケール
+  turbulenceScale: 0.2,     // ノイズの空間周波数（小さい = 大きなうねり）
+  turbulenceStrength: 0.01, // 乱流の強さ（控えめ: ほぼ真下に落ちつつ微かに揺れる程度）
+  timeScale: 0.5,           // ノイズの時間変化速度（ゆっくり変化）
+  yDamping: 0.1,             // Y 方向の風の減衰（ほぼゼロ）
+  gustFrequency: 0.5,        // 突風の時間変動周波数（穏やかに）
+  gustStrength: 0.02,       // 突風の追加強度（控えめ）
+  gustSpatialScale: { x: 0.03, z: 0.04 }, // 突風の空間変動スケール
   octaves: [
     { freq: 1.0, amp: 1.0 },   // オクターブ 1: 大きなうねり
-    { freq: 2.3, amp: 0.5 },   // オクターブ 2: 中程度の渦
-    { freq: 4.7, amp: 0.25 },  // オクターブ 3: 細かい乱流
+    { freq: 2.3, amp: 0.4 },   // オクターブ 2: 中程度の渦
+    { freq: 4.7, amp: 0.15 },  // オクターブ 3: 細かい乱流
   ],
 }
 
 // --- 速度制限 ---
-const MAX_HORIZONTAL_SPEED = 0.06    // 水平速度の上限（発散防止）
-const FALL_SPEED_MIN_RATIO = 0.3     // 落下速度の最小倍率（rainSpeed に対して）
-const FALL_SPEED_MAX_RATIO = 1.5     // 落下速度の最大倍率
+const MAX_HORIZONTAL_SPEED = 0.02    // 水平速度の上限（しっかり抑える）
+const FALL_SPEED_MIN_RATIO = 0.7     // 落下速度の最小倍率（あまり遅くならない）
+const FALL_SPEED_MAX_RATIO = 1.3     // 落下速度の最大倍率
 
 // --- リスポーン ---
 const RESPAWN_WIND_CARRY = 0.5       // リスポーン時に風場の影響をどれだけ引き継ぐか

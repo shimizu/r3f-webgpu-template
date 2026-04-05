@@ -38,6 +38,9 @@ function Scene() {
 
   return (
     <>
+      {/* 雨天フォグ: 遠景を霞ませてジオラマの囲まれた空気感を出す */}
+      <fog attach="fog" args={['#6a7580', 20, 60]} />
+
       <LightingRig />
       <SkyLayer />
 
