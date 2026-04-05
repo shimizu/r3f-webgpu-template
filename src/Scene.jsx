@@ -5,6 +5,7 @@ import MaterialSamplesLayer from './layers/MaterialSamplesLayer'
 import SkyLayer from './layers/SkyLayer'
 import StageLayer from './layers/StageLayer'
 import WaterBlobLayer from './layers/WaterBlobLayer'
+import WaterOceanLayer from './layers/WaterOceanLayer'
 
 /*
   このファイルの処理の流れ
@@ -54,11 +55,16 @@ function Scene() {
       <group position={[0, 0, 0]} rotation={[0, 0, 0]}>
         <StageLayer />
         <MaterialSamplesLayer />
-        <WaterBlobLayer
+        {/* <WaterBlobLayer
           width={20}
           height={8}
           depth={2.5}
           position={[0, 0, -3]}
+        /> */}
+        <WaterOceanLayer
+          width={30}
+          height={30}
+          position={[0, 0, 0]}
         />
       </group>
     </>
