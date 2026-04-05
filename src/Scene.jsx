@@ -4,6 +4,7 @@ import LightingRig from './LightingRig'
 import MaterialSamplesLayer from './layers/MaterialSamplesLayer'
 import SkyLayer from './layers/SkyLayer'
 import StageLayer from './layers/StageLayer'
+import TerrainLayer from './layers/TerrainLayer'
 import WaterBlobLayer from './layers/WaterBlobLayer'
 import WaterBoxLayer from './layers/WaterBoxLayer'
 import WaterOceanLayer from './layers/WaterOceanLayer'
@@ -74,6 +75,7 @@ function Scene() {
           depth={2}
           position={[10, 2, -6]}
         />
+        <TerrainLayer position={[0, 5, 6]} />
       </group>
     </>
   )
