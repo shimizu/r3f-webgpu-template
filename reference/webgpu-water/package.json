@@ -1,0 +1,25 @@
+{
+  "name": "webgpu",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "deploy": "vite build && gh-pages -d dist",
+    "format": "prettier --write ."
+  },
+  "devDependencies": {
+    "@webgpu/types": "^0.1.51",
+    "gh-pages": "^6.3.0",
+    "prettier": "^3.8.1",
+    "typescript": "^5.7.3",
+    "vite": "^7.2.4",
+    "vite-plugin-glsl": "^1.5.5"
+  },
+  "dependencies": {
+    "lil-gui": "^0.21.0",
+    "wgpu-matrix": "^3.4.0"
+  }
+}

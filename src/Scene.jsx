@@ -60,19 +60,19 @@ function Scene() {
           width={8}
           height={8}
           depth={2}
-          position={[-10, 1, -6]}
+          position={[-10, 2, -6]}
         />
         <WaterBlobLayer
           width={8}
           height={8}
-          depth={2}
-          position={[0, 1, -6]}
+          depth={6}
+          position={[0, 2, -6]}
         />
         <WaterOceanLayer
           width={8}
           height={8}
           depth={2}
-          position={[10, 1, -6]}
+          position={[10, 2, -6]}
         />
       </group>
     </>

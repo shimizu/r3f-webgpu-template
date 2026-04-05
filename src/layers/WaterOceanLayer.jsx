@@ -215,6 +215,7 @@ function WaterOceanLayer({
       <mesh
         castShadow
         receiveShadow
+        position={[0, -depth / 2, 0]}
         scale={[width / 2, depth, height / 2]}
       >
         <boxGeometry args={[2, 1, 2, 1, 1, 1]} />
