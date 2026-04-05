@@ -1,72 +1,132 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useLoader } from '@react-three/fiber'
-import { TextureLoader, RepeatWrapping, PlaneGeometry, Vector3, FrontSide } from 'three'
-import { WaterMesh } from 'three/addons/objects/WaterMesh.js'
+import { TextureLoader, RepeatWrapping, FrontSide } from 'three'
 import { MeshPhysicalNodeMaterial } from 'three/webgpu'
 import {
+  cameraPosition,
   color,
   float,
   mix,
   mx_noise_float,
+  normalLocal,
+  normalWorld,
   positionLocal,
   positionWorld,
   smoothstep,
+  texture,
   time,
+  uv,
+  vec2,
   vec3,
 } from 'three/tsl'
 
-// --- 水面設定 ---
-const WATER_CONFIG = {
-  waterColor: 0x001e0f,
-  sunColor: 0xffffff,
-  sunDirection: new Vector3(0.70707, 0.70707, 0.0),
-  distortionScale: 3.7,
-  size: 1.0,
-  alpha: 1.0,
-  resolutionScale: 0.5,
-}
-
-// --- 側面マテリアル設定 ---
-const SIDE_MATERIAL = {
-  transmission: 0.4,
+// --- マテリアル基本パラメータ ---
+const MATERIAL = {
+  transmission: 0.5,
   thickness: 2.0,
-  roughness: 0.15,
+  roughness: 0.1,
   ior: 1.333,
-  attenuationDistance: 1.5,
+  attenuationDistance: 2.0,
   attenuationColor: '#064a3e',
+  clearcoat: 0.08,
+  clearcoatRoughness: 0.08,
+  envMapIntensity: 0.5,
 }
 
-const SIDE_COLORS = {
-  shallow: '#48c9b0',
-  deep: '#0c5c52',
+// --- カラー ---
+const COLORS = {
+  surfaceLight: '#48c9b0',
+  surfaceDark: '#1a8a7a',
+  sideShallow: '#2eb8a0',
+  sideDeep: '#0c5c52',
   caustic: '#5ee8c8',
   ripple: '#1a9080',
+  reflection: '#87ceeb',
+  attenuationShallow: '#0a6858',
+  attenuationDeep: '#032820',
 }
 
-// --- 側面の水中マテリアル ---
-function createUnderwaterMaterial() {
+// --- エフェクト ---
+const EFFECTS = {
+  normalMapScale: 0.8,
+  normalMapSpeed: 0.03,
+  normalStrength: 1.5,
+  causticIntensity: 0.3,
+  fresnelPower: 2.5,
+  fresnelStrength: 0.4,
+  waveSpeed: 0.9,
+}
+
+function createWaterBoxMaterial(waterNormalsTexture) {
   const material = new MeshPhysicalNodeMaterial({
     transparent: true,
-    transmission: SIDE_MATERIAL.transmission,
-    thickness: SIDE_MATERIAL.thickness,
-    roughness: SIDE_MATERIAL.roughness,
+    transmission: MATERIAL.transmission,
+    thickness: MATERIAL.thickness,
+    roughness: MATERIAL.roughness,
     metalness: 0,
-    ior: SIDE_MATERIAL.ior,
-    attenuationDistance: SIDE_MATERIAL.attenuationDistance,
-    attenuationColor: SIDE_MATERIAL.attenuationColor,
+    ior: MATERIAL.ior,
+    attenuationDistance: MATERIAL.attenuationDistance,
+    attenuationColor: MATERIAL.attenuationColor,
+    clearcoat: MATERIAL.clearcoat,
+    clearcoatRoughness: MATERIAL.clearcoatRoughness,
     side: FrontSide,
     depthWrite: true,
+    envMapIntensity: MATERIAL.envMapIntensity,
   })
 
-  // 深度グラデーション: ワールド Y で上=浅い色、下=深い色
-  const depthFactor = smoothstep(float(-2.0), float(0.0), positionWorld.y)
-  const baseColor = mix(
-    color(SIDE_COLORS.deep),
-    color(SIDE_COLORS.shallow),
-    depthFactor
+  const waterNormals = texture(waterNormalsTexture)
+
+  // --- 面の判定 ---
+  // normalLocal.y ≈ 1 → 上面、≈ 0 → 側面、≈ -1 → 底面
+  const topMask = smoothstep(float(0.5), float(0.9), normalLocal.y)
+  const sideMask = normalLocal.y.abs().oneMinus().smoothstep(float(0.0), float(0.5))
+
+  // --- 上面: ノーマルマップスクロールによる波 ---
+  const uvCoord = uv()
+  const scale = EFFECTS.normalMapScale
+  const speed = EFFECTS.normalMapSpeed
+
+  // 4方向にスクロールするノーマルマップを合成
+  const uv0 = uvCoord.mul(scale).add(vec2(time.mul(speed), time.mul(speed * 0.7)))
+  const uv1 = uvCoord.mul(scale * 1.1).sub(vec2(time.mul(speed * 0.8), time.mul(speed * -0.6)))
+  const uv2 = uvCoord.mul(scale * 0.5).add(vec2(time.mul(speed * 0.4), time.mul(speed * 1.2)))
+  const uv3 = uvCoord.mul(scale * 0.7).sub(vec2(time.mul(speed * -0.5), time.mul(speed * 0.9)))
+
+  const n0 = waterNormals.sample(uv0)
+  const n1 = waterNormals.sample(uv1)
+  const n2 = waterNormals.sample(uv2)
+  const n3 = waterNormals.sample(uv3)
+
+  // 4サンプルを合成 → [-1, 1] に変換
+  const combinedNormal = n0.add(n1).add(n2).add(n3).mul(0.25).mul(2.0).sub(1.0)
+  const surfaceNormal = vec3(
+    combinedNormal.x.mul(EFFECTS.normalStrength),
+    float(1.0),
+    combinedNormal.y.mul(EFFECTS.normalStrength)
+  ).normalize()
+
+  // 側面は元の法線をそのまま使う
+  material.normalNode = mix(normalLocal, surfaceNormal, topMask)
+
+  // --- 深度グラデーション ---
+  const depthFactor = smoothstep(float(-0.5), float(0.5), positionLocal.y)
+
+  // --- 上面カラー ---
+  const waveShade = combinedNormal.x.mul(0.5).add(0.5)
+  const surfaceColor = mix(
+    color(COLORS.surfaceDark),
+    color(COLORS.surfaceLight),
+    waveShade
   )
 
-  // コースティクス: 水中の集光パターン
+  // --- 側面カラー: 深度グラデ + コースティクス + 波紋 ---
+  const sideBase = mix(
+    color(COLORS.sideDeep),
+    color(COLORS.sideShallow),
+    depthFactor.mul(0.8)
+  )
+
+  // コースティクス
   const causticA = mx_noise_float(
     vec3(
       positionWorld.x.mul(1.5).add(time.mul(0.15)),
@@ -81,12 +141,15 @@ function createUnderwaterMaterial() {
       positionWorld.z.mul(0.9)
     )
   ).sin().abs()
-  const causticPattern = causticA.mul(causticB)
-    .smoothstep(float(0.2), float(0.75))
-  const causticMask = depthFactor.oneMinus().smoothstep(float(0.1), float(0.6))
-  const causticIntensity = causticPattern.mul(causticMask).mul(0.3)
+  const causticPattern = causticA.mul(causticB).smoothstep(float(0.2), float(0.75))
+  const causticDepthMask = depthFactor.oneMinus().smoothstep(float(0.1), float(0.6))
+  const causticColor = mix(
+    sideBase,
+    color(COLORS.caustic),
+    causticPattern.mul(causticDepthMask).mul(EFFECTS.causticIntensity)
+  )
 
-  // 波紋バンド: 横縞のゆらぎアニメーション
+  // 波紋バンド
   const sideNoise = mx_noise_float(
     positionWorld.mul(vec3(0.35, 0.35, 0.5))
       .add(vec3(time.mul(0.12), time.mul(-0.08), 0))
@@ -94,94 +157,35 @@ function createUnderwaterMaterial() {
   const sideBands = positionWorld.y
     .mul(2.2)
     .add(positionWorld.z.mul(0.5))
-    .sub(time.mul(0.9))
+    .sub(time.mul(EFFECTS.waveSpeed))
     .sin()
     .mul(0.5)
     .add(0.5)
-  const sideRipple = sideNoise.add(sideBands).mul(0.08)
+  const sideRipple = sideNoise.add(sideBands).mul(0.06)
+  const sideColor = mix(causticColor, color(COLORS.ripple), sideRipple)
 
-  // カラー合成
-  const withCaustic = mix(baseColor, color(SIDE_COLORS.caustic), causticIntensity)
-  const withRipple = mix(withCaustic, color(SIDE_COLORS.ripple), sideRipple)
-  material.colorNode = withRipple
+  // 上面と側面を合成
+  material.colorNode = mix(sideColor, surfaceColor, topMask)
 
-  // 透過度: 上ほど透明、下ほど不透明
-  material.opacityNode = mix(float(0.92), float(0.6), depthFactor)
+  // --- フレネル反射（上面のみ）---
+  const viewDir = cameraPosition.sub(positionWorld).normalize()
+  const fresnel = normalWorld.dot(viewDir).abs().oneMinus().pow(EFFECTS.fresnelPower)
+  const reflectivity = fresnel.mul(EFFECTS.fresnelStrength).mul(topMask)
+  material.colorNode = mix(material.colorNode, color(COLORS.reflection), reflectivity)
+
+  // --- 透過度 ---
+  const topOpacity = mix(float(0.5), float(0.75), fresnel)
+  const sideOpacity = mix(float(0.92), float(0.65), depthFactor)
+  material.opacityNode = mix(sideOpacity, topOpacity, topMask)
+
+  // --- 光吸収カラー ---
+  material.attenuationColorNode = mix(
+    color(COLORS.attenuationDeep),
+    color(COLORS.attenuationShallow),
+    depthFactor.mul(0.9)
+  )
 
   return material
-}
-
-// --- 側面・底面パネル ---
-function WaterSides({ width, height, depth }) {
-  const material = useMemo(() => createUnderwaterMaterial(), [])
-
-  useEffect(() => {
-    return () => material.dispose()
-  }, [material])
-
-  const halfW = width / 2
-  const halfH = height / 2
-  const y = -depth / 2
-
-  return (
-    <group>
-      {/* 前面 (Z+) */}
-      <mesh position={[0, y, halfH]} material={material}>
-        <planeGeometry args={[width, depth]} />
-      </mesh>
-      {/* 背面 (Z-) */}
-      <mesh position={[0, y, -halfH]} rotation={[0, Math.PI, 0]} material={material}>
-        <planeGeometry args={[width, depth]} />
-      </mesh>
-      {/* 右面 (X+) */}
-      <mesh position={[halfW, y, 0]} rotation={[0, -Math.PI / 2, 0]} material={material}>
-        <planeGeometry args={[height, depth]} />
-      </mesh>
-      {/* 左面 (X-) */}
-      <mesh position={[-halfW, y, 0]} rotation={[0, Math.PI / 2, 0]} material={material}>
-        <planeGeometry args={[height, depth]} />
-      </mesh>
-      {/* 底面 */}
-      <mesh position={[0, -depth, 0]} rotation={[Math.PI / 2, 0, 0]} material={material}>
-        <planeGeometry args={[width, height]} />
-      </mesh>
-    </group>
-  )
-}
-
-// --- WaterMesh (上面) ---
-function WaterSurface({ waterNormals, width, height, position, rotation }) {
-  const waterRef = useRef()
-
-  useEffect(() => {
-    if (!waterRef.current) return
-
-    const geometry = new PlaneGeometry(width, height)
-    const water = new WaterMesh(geometry, {
-      waterNormals,
-      sunDirection: WATER_CONFIG.sunDirection,
-      sunColor: WATER_CONFIG.sunColor,
-      waterColor: WATER_CONFIG.waterColor,
-      distortionScale: WATER_CONFIG.distortionScale,
-      size: WATER_CONFIG.size,
-      alpha: WATER_CONFIG.alpha,
-      resolutionScale: WATER_CONFIG.resolutionScale,
-    })
-
-    water.position.set(...position)
-    water.rotation.set(...rotation)
-
-    const parent = waterRef.current
-    parent.add(water)
-
-    return () => {
-      parent.remove(water)
-      geometry.dispose()
-      water.material.dispose()
-    }
-  }, [waterNormals, width, height, position, rotation])
-
-  return <group ref={waterRef} />
 }
 
 function WaterOceanLayer({
@@ -189,7 +193,6 @@ function WaterOceanLayer({
   height = 200,
   depth = 2,
   position = [0, 0, 0],
-  rotation = [-Math.PI / 2, 0, 0],
 }) {
   const waterNormals = useLoader(TextureLoader, '/textures/waternormals.jpg')
 
@@ -198,16 +201,25 @@ function WaterOceanLayer({
     waterNormals.wrapT = RepeatWrapping
   }, [waterNormals])
 
+  const material = useMemo(
+    () => createWaterBoxMaterial(waterNormals),
+    [waterNormals]
+  )
+
+  useEffect(() => {
+    return () => material.dispose()
+  }, [material])
+
   return (
     <group position={position}>
-      <WaterSurface
-        waterNormals={waterNormals}
-        width={width}
-        height={height}
-        position={[0, 0, 0]}
-        rotation={rotation}
-      />
-      <WaterSides width={width} height={height} depth={depth} />
+      <mesh
+        castShadow
+        receiveShadow
+        scale={[width / 2, depth, height / 2]}
+      >
+        <boxGeometry args={[2, 1, 2, 1, 1, 1]} />
+        <primitive object={material} attach='material' />
+      </mesh>
     </group>
   )
 }
