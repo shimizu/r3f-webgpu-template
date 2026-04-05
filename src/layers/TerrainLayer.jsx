@@ -328,7 +328,19 @@ function buildTerrainGeometry(demData, { terrainWidth, targetHeight, terrainDept
   geometry.setIndex(new Uint32BufferAttribute(indices, 1))
   geometry.computeVertexNormals()
 
-  return geometry
+  // ワールド座標系の高さバッファを生成（雨などの衝突判定用）
+  const heightBuffer = new Float32Array(cols * rows)
+  for (let row = 0; row < rows; row++) {
+    const demRow = rows - 1 - row
+    for (let col = 0; col < cols; col++) {
+      heightBuffer[row * cols + col] = blurred[demRow * cols + col] * elevToWorld
+    }
+  }
+
+  return {
+    geometry,
+    heightInfo: { heights: heightBuffer, cols, rows, terrainWidth, terrainDepth },
+  }
 }
 
 function TerrainLayer({
@@ -340,6 +352,7 @@ function TerrainLayer({
   heightScale = 1.0,
   baseHeight = 2.0,
   position = [0, 0, 0],
+  onHeightData,
 }) {
   const [demData, setDemData] = useState(null)
   const [texMap, setTexMap] = useState(null)
@@ -423,8 +436,8 @@ function TerrainLayer({
     return () => { ignore = true }
   }, [url])
 
-  const geometry = useMemo(() => {
-    if (!demData) return null
+  const { geometry, heightInfo } = useMemo(() => {
+    if (!demData) return { geometry: null, heightInfo: null }
     return buildTerrainGeometry(demData, {
       terrainWidth: scale[0],
       targetHeight: scale[1],
@@ -434,6 +447,10 @@ function TerrainLayer({
       baseHeight,
     })
   }, [demData, scale, smooth, heightScale, baseHeight])
+
+  useEffect(() => {
+    if (heightInfo && onHeightData) onHeightData(heightInfo)
+  }, [heightInfo, onHeightData])
 
   const material = useMemo(() => createTerrainMaterial(mergedColors, texMap), [mergedColors, texMap])
 

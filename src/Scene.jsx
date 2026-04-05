@@ -1,12 +1,10 @@
+import { useState } from 'react'
 import { MapControls } from '@react-three/drei'
 
 import LightingRig from './LightingRig'
-import MaterialSamplesLayer from './layers/MaterialSamplesLayer'
+import RainLayer from './layers/RainLayer'
 import SkyLayer from './layers/SkyLayer'
-import StageLayer from './layers/StageLayer'
 import TerrainLayer from './layers/TerrainLayer'
-import WaterBlobLayer from './layers/WaterBlobLayer'
-import WaterBoxLayer from './layers/WaterBoxLayer'
 import WaterOceanLayer from './layers/WaterOceanLayer'
 
 /*
@@ -32,6 +30,8 @@ import WaterOceanLayer from './layers/WaterOceanLayer'
   という画面構成の入口になっている。
 */
 function Scene() {
+  const [heightInfo, setHeightInfo] = useState(null)
+
   return (
     <>
       <LightingRig />
@@ -96,6 +96,16 @@ function Scene() {
           baseHeight={1}
           smooth={1}
           position={[0, 0, 0]}
+          onHeightData={setHeightInfo}
+        />
+
+        <RainLayer
+          heightInfo={heightInfo}
+          position={[0, 0, 0]}
+          width={15}
+          depth={13}
+          topY={6}
+          particleCount={30000}
         />
 
         <axesHelper args={[10]} />
