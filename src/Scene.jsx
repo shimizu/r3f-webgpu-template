@@ -5,6 +5,7 @@ import MaterialSamplesLayer from './layers/MaterialSamplesLayer'
 import SkyLayer from './layers/SkyLayer'
 import StageLayer from './layers/StageLayer'
 import WaterBlobLayer from './layers/WaterBlobLayer'
+import WaterBoxLayer from './layers/WaterBoxLayer'
 import WaterOceanLayer from './layers/WaterOceanLayer'
 
 /*
@@ -55,17 +56,23 @@ function Scene() {
       <group position={[0, 0, 0]} rotation={[0, 0, 0]}>
         <StageLayer />
         <MaterialSamplesLayer />
-        {/* <WaterBlobLayer
-          width={20}
+        <WaterBoxLayer
+          width={8}
           height={8}
-          depth={2.5}
-          position={[0, 0, -3]}
-        /> */}
-        <WaterOceanLayer
-          width={10}
-          height={10}
           depth={2}
-          position={[0, 0, 0]}
+          position={[-10, 1, -6]}
+        />
+        <WaterBlobLayer
+          width={8}
+          height={8}
+          depth={2}
+          position={[0, 1, -6]}
+        />
+        <WaterOceanLayer
+          width={8}
+          height={8}
+          depth={2}
+          position={[10, 1, -6]}
         />
       </group>
     </>

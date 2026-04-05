@@ -340,7 +340,7 @@ function WaterBoxMesh({ environmentMap, width, height, depth, position, segments
   }, [bodyMaterial])
 
   return (
-    <mesh castShadow receiveShadow position={position}>
+    <mesh castShadow receiveShadow position={[0, -depth / 2, 0]}>
       <boxGeometry args={[width, depth, height, ...segments]} />
       <primitive object={bodyMaterial} attach='material' />
     </mesh>

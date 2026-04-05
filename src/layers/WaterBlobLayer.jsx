@@ -401,8 +401,11 @@ function WaterBlobMesh({ environmentMap, width, height, depth, position }) {
     }
   }, [blobMaterial])
 
+  // position.y を水面（上面）の位置にするため、blob の上面分だけ下げる
+  // CubeCamera が position を適用済みなので、ここでは Y オフセットのみ
+  const topOffset = depth * 0.5 * BLOB.flattenPower
   return (
-    <mesh castShadow receiveShadow position={position}>
+    <mesh castShadow receiveShadow position={[0, -topOffset, 0]}>
       <sphereGeometry args={[1, SPHERE_SEGMENTS, SPHERE_SEGMENTS]} />
       <primitive object={blobMaterial} attach='material' />
     </mesh>
