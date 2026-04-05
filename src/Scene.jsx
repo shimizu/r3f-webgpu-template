@@ -83,19 +83,21 @@ function Scene() {
           width={15.9}
           height={13.9}
           depth={1}
-          position={[0, 0.01, 5]}
+          position={[0, 0.01, -1]}
         />
 
 
 
-        <TerrainLayer 
-          url="./dem/output_GEBCOIceTopo.tif" 
+        <TerrainLayer
+          url="./dem/output_GEBCOIceTopo.tif"
           texture="./dem/output_GEBCOIceTopo.png"
           heightScale={0.5}
           baseHeight={1}
-          smooth={1} 
-          position={[0, 0, 6]} 
+          smooth={1}
+          position={[0, 0, 0]}
         />
+
+        <axesHelper args={[10]} />
     </>
   )
 }

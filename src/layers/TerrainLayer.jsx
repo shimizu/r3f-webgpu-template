@@ -47,9 +47,7 @@ function createTerrainMaterial(colors) {
     smoothstep(float(0.85), float(1.0), elevation))
 
   const sideMask = attribute('aSideMask', 'float')
-  const surfaceColor = mix(finalColor, color(colors.side), sideMask)
-
-  material.colorNode = surfaceColor
+  material.colorNode = mix(finalColor, color(colors.side), sideMask)
 
   return material
 }
@@ -143,6 +141,7 @@ function buildTerrainGeometry(demData, { terrainWidth, targetHeight, terrainDept
   const topPositions = new Float32Array(topVertCount * 3)
   const topNormElevs = new Float32Array(topVertCount)
   const topSideMask = new Float32Array(topVertCount) // 全て 0
+  const topUvs = new Float32Array(topVertCount * 2)
 
   const stepX = terrainWidth / (cols - 1)
   const stepZ = terrainDepth / (rows - 1)
@@ -156,6 +155,8 @@ function buildTerrainGeometry(demData, { terrainWidth, targetHeight, terrainDept
       topPositions[vi * 3 + 1] = getElev(col, row)
       topPositions[vi * 3 + 2] = row * stepZ - halfD
       topNormElevs[vi] = getNormElev(col, row)
+      topUvs[vi * 2] = col / (cols - 1)
+      topUvs[vi * 2 + 1] = 1 - row / (rows - 1)
     }
   }
 
@@ -185,6 +186,7 @@ function buildTerrainGeometry(demData, { terrainWidth, targetHeight, terrainDept
   const sidePositions = new Float32Array(sideVertCount * 3)
   const sideNormElevs = new Float32Array(sideVertCount) // 0 for sides
   const sideSideMask = new Float32Array(sideVertCount)
+  const sideUvs = new Float32Array(sideVertCount * 2) // 側面は (0,0)
 
   // 外周頂点を収集 (時計回り: 上辺→右辺→下辺→左辺)
   const perimeterPoints = []
@@ -260,6 +262,7 @@ function buildTerrainGeometry(demData, { terrainWidth, targetHeight, terrainDept
   ])
   const bottomNormElevs = new Float32Array(4)
   const bottomSideMask = new Float32Array([1, 1, 1, 1])
+  const bottomUvs = new Float32Array(8) // 底面は (0,0)
   const bottomIndices = new Uint32Array([
     0, 1, 2,
     0, 2, 3,
@@ -270,23 +273,27 @@ function buildTerrainGeometry(demData, { terrainWidth, targetHeight, terrainDept
   const positions = new Float32Array(totalVerts * 3)
   const normElevs = new Float32Array(totalVerts)
   const sideMasks = new Float32Array(totalVerts)
+  const uvs = new Float32Array(totalVerts * 2)
 
   // 上面
   positions.set(topPositions, 0)
   normElevs.set(topNormElevs, 0)
   sideMasks.set(topSideMask, 0)
+  uvs.set(topUvs, 0)
 
   // 側面
   const sideOffset = topVertCount
   positions.set(sidePositions, sideOffset * 3)
   normElevs.set(sideNormElevs, sideOffset)
   sideMasks.set(sideSideMask, sideOffset)
+  uvs.set(sideUvs, sideOffset * 2)
 
   // 底面
   const bottomOffset = topVertCount + sideVertCount
   positions.set(bottomPositions, bottomOffset * 3)
   normElevs.set(bottomNormElevs, bottomOffset)
   sideMasks.set(bottomSideMask, bottomOffset)
+  uvs.set(bottomUvs, bottomOffset * 2)
 
   // インデックス結合
   const totalIndices = topIndices.length + sideIndices.length + bottomIndices.length
@@ -305,6 +312,7 @@ function buildTerrainGeometry(demData, { terrainWidth, targetHeight, terrainDept
 
   const geometry = new BufferGeometry()
   geometry.setAttribute('position', new Float32BufferAttribute(positions, 3))
+  geometry.setAttribute('uv', new Float32BufferAttribute(uvs, 2))
   geometry.setAttribute('aElevation', new Float32BufferAttribute(normElevs, 1))
   geometry.setAttribute('aSideMask', new Float32BufferAttribute(sideMasks, 1))
   geometry.setIndex(new Uint32BufferAttribute(indices, 1))
