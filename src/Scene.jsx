@@ -65,7 +65,7 @@ function Scene() {
           width={10}
           height={10}
           depth={2}
-          position={[0, 5, 0]}
+          position={[0, 0, 0]}
         />
       </group>
     </>
