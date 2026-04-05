@@ -12,8 +12,8 @@ function createTileData(columns, rows, tileSize) {
     return {
       position: [
         (column - (columns - 1) * 0.5) * tileSize,
-        (row - (rows - 1) * 0.5) * tileSize,
         0.005,
+        (row - (rows - 1) * 0.5) * tileSize,
       ],
       color: (column + row) % 2 === 0 ? bright.clone() : dark.clone(),
     }
@@ -53,8 +53,8 @@ function StageLayer({
 
   return (
     <group>
-      <mesh receiveShadow position={[0, 0, -0.65]}>
-        <boxGeometry args={[floorWidth + 0.8, floorHeight + 0.8, 1.3]} />
+      <mesh receiveShadow position={[0, -0.65, 0]}>
+        <boxGeometry args={[floorWidth + 0.8, 1.3, floorHeight + 0.8]} />
         <meshStandardMaterial color='#757575' roughness={0.86} metalness={0.02} />
       </mesh>
 
@@ -63,7 +63,7 @@ function StageLayer({
         args={[null, null, columns * rows]}
         receiveShadow
       >
-        <boxGeometry args={[tileSize, tileSize, 0.02]} />
+        <boxGeometry args={[tileSize, 0.02, tileSize]} />
         <meshPhysicalMaterial
           vertexColors
           color='#8a8a8a'

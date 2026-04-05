@@ -45,9 +45,9 @@ function createSkyMaterial() {
     fog: false,
   })
 
-  // Z-up シーン: normalLocal.z で高度を取得
-  // BackSide なので法線は内向き、z がそのまま上方向
-  const altitude = normalLocal.z
+  // Y-up シーン: normalLocal.y で高度を取得
+  // BackSide なので法線は内向き、y がそのまま上方向
+  const altitude = normalLocal.y
 
   // 空のグラデーション: 天頂→地平線→地面
   // altitude は -1(真下) ~ 0(水平) ~ +1(真上)
@@ -63,10 +63,10 @@ function createSkyMaterial() {
   )
 
   // 雲: fBM ノイズで生成
-  // Z-up シーン: 球面上の XY 座標をノイズ入力に使用
+  // Y-up シーン: 球面上の XZ 座標をノイズ入力に使用
   const cloudUV = vec3(
     normalLocal.x.mul(CLOUD.baseScale),
-    normalLocal.y.mul(CLOUD.baseScale),
+    normalLocal.z.mul(CLOUD.baseScale),
     0
   )
   const cloudUVAnimated = cloudUV.add(vec3(time.mul(CLOUD.speed), time.mul(CLOUD.speed * 0.3), 0))

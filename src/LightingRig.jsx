@@ -2,13 +2,13 @@ function LightingRig() {
   return (
     <>
       <ambientLight intensity={0.08} color='#f4f1eb' />
-      <hemisphereLight args={['#d6d3cf', '#4e4e4e', 0.55]} position={[0, 0, 12]} />
+      <hemisphereLight args={['#d6d3cf', '#4e4e4e', 0.55]} position={[0, 12, 0]} />
 
       <directionalLight
         castShadow
         color='#fff8ef'
         intensity={1.8}
-        position={[6, -12, 14]}
+        position={[6, 14, -12]}
         shadow-mapSize-width={2048}
         shadow-mapSize-height={2048}
         shadow-camera-near={1}
@@ -27,7 +27,7 @@ function LightingRig() {
         penumbra={0.8}
         decay={1.2}
         distance={32}
-        position={[-8, -9, 7]}
+        position={[-8, 7, -9]}
       />
 
       <spotLight
@@ -37,11 +37,11 @@ function LightingRig() {
         penumbra={0.9}
         decay={1.25}
         distance={34}
-        position={[10, -2, 9]}
+        position={[10, 9, -2]}
       />
 
-      <pointLight color='#fff1dd' intensity={2.4} distance={20} position={[0, -3, 6]} />
-      <pointLight color='#d9e3f2' intensity={1.8} distance={20} position={[12, 4, 8]} />
+      <pointLight color='#fff1dd' intensity={2.4} distance={20} position={[0, 6, -3]} />
+      <pointLight color='#d9e3f2' intensity={1.8} distance={20} position={[12, 8, 4]} />
     </>
   )
 }

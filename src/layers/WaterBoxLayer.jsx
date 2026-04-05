@@ -21,7 +21,7 @@ import {
 
 // --- ジオメトリデフォルト ---
 // [X, Y, Z] 各軸の分割数。大きいほど波の解像度が上がるがGPU負荷も増える
-const DEFAULT_SEGMENTS = [64, 64, 16]
+const DEFAULT_SEGMENTS = [64, 16, 64]
 
 // --- マテリアル基本パラメータ ---
 const MATERIAL = {
@@ -99,7 +99,7 @@ const OPACITY = {
 }
 
 function createWaveHeightNode() {
-  const swell = positionLocal.y
+  const swell = positionLocal.z
     .mul(WAVE.swellFreqY)
     .add(positionLocal.x.mul(WAVE.swellFreqX))
     .sub(time.mul(WAVE.swellSpeed))
@@ -108,12 +108,12 @@ function createWaveHeightNode() {
 
   const crossSwell = positionLocal.x
     .mul(WAVE.crossSwellFreqX)
-    .sub(positionLocal.y.mul(WAVE.crossSwellFreqY))
+    .sub(positionLocal.z.mul(WAVE.crossSwellFreqY))
     .add(time.mul(WAVE.crossSwellSpeed))
     .sin()
     .mul(WAVE.crossSwellAmplitude)
 
-  const windWave = positionLocal.y
+  const windWave = positionLocal.z
     .mul(WAVE.windWaveFreqY)
     .add(positionLocal.x.mul(WAVE.windWaveFreqX))
     .sub(time.mul(WAVE.windWaveSpeed))
@@ -123,7 +123,7 @@ function createWaveHeightNode() {
   const flowNoise = mx_noise_float(
     vec3(
       positionLocal.x.mul(WAVE.flowNoiseScale).add(time.mul(0.12)),
-      positionLocal.y.mul(WAVE.flowNoiseScale * 0.8).sub(time.mul(0.08)),
+      positionLocal.z.mul(WAVE.flowNoiseScale * 0.8).sub(time.mul(0.08)),
       0
     )
   ).mul(WAVE.flowNoiseAmplitude)
@@ -131,7 +131,7 @@ function createWaveHeightNode() {
   const detailNoise = mx_noise_float(
     vec3(
       positionLocal.x.mul(WAVE.detailNoiseScale).add(time.mul(0.18)),
-      positionLocal.y.mul(WAVE.detailNoiseScale * 0.75).sub(time.mul(0.14)),
+      positionLocal.z.mul(WAVE.detailNoiseScale * 0.75).sub(time.mul(0.14)),
       0
     )
   ).mul(WAVE.detailNoiseAmplitude)
@@ -162,28 +162,28 @@ function createWaterBodyMaterial(environmentMap, { width, height, depth }) {
   const depthTint = smoothstep(
     float(-depth * 0.5),
     float(depth * 0.5),
-    positionLocal.z
+    positionLocal.y
   )
   const topMask = smoothstep(
     float(depth * 0.1),
     float(depth * 0.5),
-    positionLocal.z
+    positionLocal.y
   )
   const edgeDistance = length(
     vec2(
       positionLocal.x.div(float(width * 0.5)),
-      positionLocal.y.div(float(height * 0.5))
+      positionLocal.z.div(float(height * 0.5))
     )
   )
   const edgeFade = smoothstep(float(0.78), float(1.0), edgeDistance).oneMinus()
 
-  const sideMask = normalLocal.z.abs().oneMinus().pow(3)
+  const sideMask = normalLocal.y.abs().oneMinus().pow(3)
   const sideNoise = mx_noise_float(
     positionWorld.mul(vec3(0.35, 0.35, 0.5)).add(vec3(time.mul(0.12), time.mul(-0.08), 0))
   ).mul(0.5)
-  const sideBands = positionLocal.z
+  const sideBands = positionLocal.y
     .mul(2.2)
-    .add(positionLocal.y.mul(0.5))
+    .add(positionLocal.z.mul(0.5))
     .sub(time.mul(0.9))
     .sin()
     .mul(0.5)
@@ -197,20 +197,20 @@ function createWaterBodyMaterial(environmentMap, { width, height, depth }) {
   const glintNoise = mx_noise_float(
     vec3(
       positionLocal.x.mul(0.4).add(time.mul(0.14)),
-      positionLocal.y.mul(0.35).sub(time.mul(0.1)),
+      positionLocal.z.mul(0.35).sub(time.mul(0.1)),
       0
     )
   )
   const glintBandsA = positionLocal.x
     .mul(2.8)
-    .add(positionLocal.y.mul(2.0))
+    .add(positionLocal.z.mul(2.0))
     .sub(time.mul(2.0))
     .add(glintNoise.mul(4))
     .sin()
     .abs()
   const glintBandsB = positionLocal.x
     .mul(-1.8)
-    .add(positionLocal.y.mul(2.5))
+    .add(positionLocal.z.mul(2.5))
     .add(time.mul(1.5))
     .add(waveHeight.mul(5))
     .sin()
@@ -225,14 +225,14 @@ function createWaterBodyMaterial(environmentMap, { width, height, depth }) {
   const causticA = mx_noise_float(
     vec3(
       positionLocal.x.mul(1.5).add(time.mul(0.15)),
-      positionLocal.y.mul(1.3).sub(time.mul(0.12)),
+      positionLocal.z.mul(1.3).sub(time.mul(0.12)),
       0
     )
   ).sin().abs()
   const causticB = mx_noise_float(
     vec3(
       positionLocal.x.mul(-1.2).add(time.mul(0.1)),
-      positionLocal.y.mul(1.8).add(time.mul(0.14)),
+      positionLocal.z.mul(1.8).add(time.mul(0.14)),
       0
     )
   ).sin().abs()
@@ -249,7 +249,7 @@ function createWaterBodyMaterial(environmentMap, { width, height, depth }) {
   const foamNoise = mx_noise_float(
     vec3(
       positionLocal.x.mul(3.0).add(time.mul(0.35)),
-      positionLocal.y.mul(2.8).sub(time.mul(0.3)),
+      positionLocal.z.mul(2.8).sub(time.mul(0.3)),
       0
     )
   ).mul(0.5).add(0.5)
@@ -285,13 +285,13 @@ function createWaterBodyMaterial(environmentMap, { width, height, depth }) {
   const topOpacity = mix(float(OPACITY.topMin), float(OPACITY.topMax), fresnel)
   const finalOpacity = mix(topOpacity, bodyOpacity, sideMask.mul(0.8).add(topMask.oneMinus().mul(0.6)))
 
-  material.positionNode = positionLocal.add(vec3(0, 0, topDisplacement))
+  material.positionNode = positionLocal.add(vec3(0, topDisplacement, 0))
   material.colorNode = reflectiveColor
   material.normalNode = normalLocal.add(
     vec3(
       topDisplacement.mul(WAVE.normalStrengthX),
-      topDisplacement.mul(WAVE.normalStrengthY),
-      float(1)
+      float(1),
+      topDisplacement.mul(WAVE.normalStrengthY)
     )
   ).normalize()
   material.opacityNode = finalOpacity
@@ -341,7 +341,7 @@ function WaterBoxMesh({ environmentMap, width, height, depth, position, segments
 
   return (
     <mesh castShadow receiveShadow position={position}>
-      <boxGeometry args={[width, height, depth, ...segments]} />
+      <boxGeometry args={[width, depth, height, ...segments]} />
       <primitive object={bodyMaterial} attach='material' />
     </mesh>
   )

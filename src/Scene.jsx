@@ -41,20 +41,25 @@ function Scene() {
         enableDamping
         minDistance={6}
         maxDistance={42}
-        target={[0, 0, 1.45]}
+        target={[0, 0, 0]}
       />
+
+      {/*位置確認用
+      <mesh>
+        <boxGeometry  args={[10,10,10]}/>
+        <meshNormalMaterial/>
+      </mesh>        
+      */}
 
       <group position={[0, 0, 0]} rotation={[0, 0, 0]}>
         <StageLayer />
         <MaterialSamplesLayer />
         <WaterBoxLayer
-          width={35.2}
+          width={36}
           height={22}
-          depth={0.75}
-          position={[0, 0, 0.38]}
+          depth={0.5}
+          position={[0, 0.1, 0]}
         />
-
-        {/* 移動体レイヤーは後で再利用できるよう実装を残しつつ、いったん舞台確認のため非表示にしている。 */}
       </group>
     </>
   )
