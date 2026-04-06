@@ -1,5 +1,6 @@
 import { Canvas } from '@react-three/fiber'
 import { WebGPURenderer } from 'three/webgpu'
+import { useControls } from 'leva'
 
 import FpsStats from './FpsStats'
 import Scene from './Scene'
@@ -17,6 +18,8 @@ async function createRenderer(props) {
 }
 
 function App() {
+  const { rainEnabled } = useControls('Rain', { rainEnabled: true })
+
   return (
     <div className='app-shell'>
       <FpsStats />
@@ -26,7 +29,7 @@ function App() {
         camera={{ position: [0, 8, -25], fov: 36, near: 0.01, far: 500 }}
         gl={createRenderer}
       >
-        <Scene />
+        <Scene rainEnabled={rainEnabled} />
       </Canvas>
     </div>
   )

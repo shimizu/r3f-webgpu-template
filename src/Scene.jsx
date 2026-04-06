@@ -34,7 +34,7 @@ import WaterOceanLayer from './layers/WaterOceanLayer'
   「全レイヤーを直接合成する」
   という画面構成の入口になっている。
 */
-function Scene() {
+function Scene({ rainEnabled = true }) {
   const [heightInfo, setHeightInfo] = useState(null)
   return (
     <>
@@ -89,34 +89,29 @@ function Scene() {
 
         <GridLayer position={[0, -1, 0]} />
 
-        <WaterOceanLayer
-          width={15.9}
-          height={13.9}
-          depth={1}
-          opacity={0.1}
-          position={[0, -0.01, -1]}
-        />
 
 
 
         <TerrainLayer
-          url="./dem/output_GEBCOIceTopo.tif"
-          texture="./dem/output_GEBCOIceTopo.png"
+          url="./dem/taiwan.tif"
+          texture="./dem/taiwan.png"
           heightScale={0.5}
-          baseHeight={1}
+          baseHeight={2}
           smooth={1}
-          position={[0, 0, 0]}
+          position={[0, 2, 0]}
           onHeightData={setHeightInfo}
         />
 
-        <RainLayer
-          heightInfo={heightInfo}
-          position={[0, 0, 0]}
-          width={15}
-          depth={13}
-          topY={6}
-          particleCount={30000}
-        />
+        {rainEnabled && (
+          <RainLayer
+            heightInfo={heightInfo}
+            position={[0, 0, 0]}
+            width={15}
+            depth={13}
+            topY={6}
+            particleCount={30000}
+          />
+        )}
 
         <axesHelper args={[10]} />
 
