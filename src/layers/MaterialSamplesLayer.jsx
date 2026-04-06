@@ -26,9 +26,10 @@ const MATERIAL_SAMPLES = [
   {
     position: [0, 0, 1.45],
     label: 'Metal',
+    cubeCamera: { frames: Infinity, resolution: 256 },
     material: {
-      color: '#a37e18',
-      roughness: 0.5,
+      color: '#f3f4f6',
+      roughness: 0.01,
       metalness: 1,
       clearcoat: 0,
       clearcoatRoughness: 0,
@@ -37,6 +38,7 @@ const MATERIAL_SAMPLES = [
   {
     position: [-3.7, 0, 1.45],
     label: 'Mirror',
+    cubeCamera: { frames: Infinity, resolution: 256 },
     material: {
       color: '#f3f4f6',
       roughness: 0.01,
@@ -65,10 +67,8 @@ const MATERIAL_SAMPLES = [
   },
 ]
 
-const CUBE_CAMERA_LABELS = ['Metal', 'Mirror']
-
 function SampleSphere({ sample }) {
-  const useCubeCamera = CUBE_CAMERA_LABELS.includes(sample.label)
+  const useCubeCamera = !!sample.cubeCamera
   const meshPosition = useCubeCamera ? [0, 0, 0] : sample.position
   const isGlass = sample.label === 'Glass'
   const rotation = [0, isGlass ? Math.PI * 0.22 : 0, 0]
@@ -83,7 +83,7 @@ function SampleSphere({ sample }) {
   return (
     <group key={sample.label}>
       {useCubeCamera ? (
-        <CubeCamera frames={Infinity} resolution={256} position={sample.position}>
+        <CubeCamera frames={sample.cubeCamera.frames} resolution={sample.cubeCamera.resolution} position={sample.position}>
           {sphere}
         </CubeCamera>
       ) : (
