@@ -332,11 +332,11 @@ function buildTerrainGeometry(demData, { terrainWidth, targetHeight, terrainDept
   geometry.computeVertexNormals()
 
   // ワールド座標系の高さバッファを生成（雨などの衝突判定用）
+  // getElev と同じロジックで生成し、上面ジオメトリとの一致を保証する
   const heightBuffer = new Float32Array(cols * rows)
   for (let row = 0; row < rows; row++) {
-    const demRow = rows - 1 - row
     for (let col = 0; col < cols; col++) {
-      heightBuffer[row * cols + col] = blurred[demRow * cols + col] * elevToWorld
+      heightBuffer[row * cols + col] = getElev(col, row)
     }
   }
 

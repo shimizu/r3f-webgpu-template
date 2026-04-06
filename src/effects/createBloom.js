@@ -6,7 +6,7 @@ import { bloom } from 'three/addons/tsl/display/BloomNode.js'
 export const BLOOM_DEFAULTS = {
   strength: 0.8,          // ブルームの強さ
   radius: 0.5,            // ブルームの広がり
-  threshold: 0.5,         // この輝度以上にブルームを適用
+  threshold: 0.9,         // この輝度以上にブルームを適用
 }
 
 /**

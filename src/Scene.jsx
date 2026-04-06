@@ -85,16 +85,30 @@ function Scene({ rainEnabled = true }) {
           position={[0, 2.0001, 0]}
         />
         
+
+        //ブルーム確認用: 高 emissive の光る球体 
+        <mesh position={[0, 5, 0]}>
+          <sphereGeometry args={[0.5, 32, 32]} />
+          <meshStandardMaterial
+            color='#ff6600'
+            emissive='#ff6600'
+            emissiveIntensity={5}
+          />
+        </mesh>
+
+        //ポストプロセッシング: Bloom + Godrays 
+        <SceneEffects />
+
      */}
 
-        <GridLayer position={[0, -1, 0]} />
+        <GridLayer position={[0, -2, 0]} />
 
         <WaterOceanLayer
-          width={15.9}
-          height={15.9}
+          width={15.99}
+          height={15.99}
           depth={2}
           opacity={0.5}
-          position={[0, 2.0001, 0]}
+          position={[0, 0, 0]}
         />
 
         <TerrainLayer
@@ -103,7 +117,7 @@ function Scene({ rainEnabled = true }) {
           heightScale={0.5}
           baseHeight={2}
           smooth={1}
-          position={[0, 2, 0]}
+          position={[0, 0, 0]}
           onHeightData={setHeightInfo}
           seaLevel={0.27}
           colors={{
@@ -122,27 +136,15 @@ function Scene({ rainEnabled = true }) {
           <RainLayer
             heightInfo={heightInfo}
             position={[0, 0, 0]}
-            width={15}
-            depth={13}
+            width={15.9}
+            depth={15.9}
             topY={6}
             particleCount={30000}
           />
         )}
 
-        <axesHelper args={[10]} />
-
-        {/* ブルーム確認用: 高 emissive の光る球体 */}
-        <mesh position={[0, 12, 0]}>
-          <sphereGeometry args={[0.5, 32, 32]} />
-          <meshStandardMaterial
-            color='#ff6600'
-            emissive='#ff6600'
-            emissiveIntensity={5}
-          />
-        </mesh>
-
-        {/* ポストプロセッシング: Bloom + Godrays */}
-        <SceneEffects />
+        {/*<axesHelper args={[10]} />*/}
+        
     </>
   )
 }

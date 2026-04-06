@@ -9,7 +9,7 @@ function LightingRig() {
       <directionalLight
         castShadow
         color='#fff4e6'
-        intensity={1.2}
+        intensity={0.8}
         position={[2, 14, -6]}
         shadow-mapSize-width={2048}
         shadow-mapSize-height={2048}
@@ -25,8 +25,8 @@ function LightingRig() {
       {/* スポットライト（卓上ランプ風）: 手元を明るく照らす */}
       <spotLight
         color='#fff0d8'
-        intensity={20}
-        angle={0.5}
+        intensity={10}
+        angle={0.25}
         penumbra={0.7}
         decay={1.2}
         distance={35}
@@ -36,7 +36,7 @@ function LightingRig() {
       {/* フィルライト: 反対側からの弱い光で影を柔らかく */}
       <spotLight
         color='#d0d8e0'
-        intensity={6}
+        intensity={3}
         angle={0.6}
         penumbra={0.9}
         decay={1.3}
