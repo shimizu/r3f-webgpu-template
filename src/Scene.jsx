@@ -77,20 +77,25 @@ function Scene({ rainEnabled = true }) {
           position={[0, 2, -6]}
         />
         </group>
-
-                <WaterOceanLayer
+        <WaterOceanLayer
           width={15.9}
-          height={13.9}
+          height={15.9}
           depth={2}
-          position={[0, 0, 5]}
+          opacity={0.5}
+          position={[0, 2.0001, 0]}
         />
         
      */}
 
         <GridLayer position={[0, -1, 0]} />
 
-
-
+        <WaterOceanLayer
+          width={15.9}
+          height={15.9}
+          depth={2}
+          opacity={0.5}
+          position={[0, 2.0001, 0]}
+        />
 
         <TerrainLayer
           url="./dem/taiwan.tif"
@@ -100,6 +105,17 @@ function Scene({ rainEnabled = true }) {
           smooth={1}
           position={[0, 2, 0]}
           onHeightData={setHeightInfo}
+          seaLevel={0.27}
+          colors={{
+            deepOcean: '#0a1a3a',
+            shallowOcean: '#1a6a8a',
+            shore: '#c2b280',
+            lowland: '#4a8a3a',
+            highland: '#9fdf8a',
+            mountain: '#8a7a6a',
+            peak: '#f0f0f0',
+            side: '#3a2a1a',
+          }}
         />
 
         {rainEnabled && (
@@ -116,7 +132,7 @@ function Scene({ rainEnabled = true }) {
         <axesHelper args={[10]} />
 
         {/* ブルーム確認用: 高 emissive の光る球体 */}
-        <mesh position={[0, 3, 0]}>
+        <mesh position={[0, 12, 0]}>
           <sphereGeometry args={[0.5, 32, 32]} />
           <meshStandardMaterial
             color='#ff6600'

@@ -26,7 +26,7 @@ const DEFAULT_COLORS = {
   side: '#3a2a1a',
 }
 
-function createTerrainMaterial(colors, texMap) {
+function createTerrainMaterial(colors, texMap, seaLevel = 0) {
   const material = new MeshPhysicalNodeMaterial({
     roughness: 0.85,
     metalness: 0.0,
@@ -43,18 +43,19 @@ function createTerrainMaterial(colors, texMap) {
   } else {
     const elevation = attribute('aElevation', 'float')
 
+    const s = float(seaLevel)
     const c1 = mix(color(colors.deepOcean), color(colors.shallowOcean),
-      smoothstep(float(0.0), float(0.3), elevation))
+      smoothstep(float(0.0).add(s), float(0.3).add(s), elevation))
     const c2 = mix(c1, color(colors.shore),
-      smoothstep(float(0.3), float(0.4), elevation))
+      smoothstep(float(0.3).add(s), float(0.4).add(s), elevation))
     const c3 = mix(c2, color(colors.lowland),
-      smoothstep(float(0.4), float(0.5), elevation))
+      smoothstep(float(0.4).add(s), float(0.5).add(s), elevation))
     const c4 = mix(c3, color(colors.highland),
-      smoothstep(float(0.5), float(0.7), elevation))
+      smoothstep(float(0.5).add(s), float(0.7).add(s), elevation))
     const c5 = mix(c4, color(colors.mountain),
-      smoothstep(float(0.7), float(0.85), elevation))
+      smoothstep(float(0.7).add(s), float(0.85).add(s), elevation))
     const finalColor = mix(c5, color(colors.peak),
-      smoothstep(float(0.85), float(1.0), elevation))
+      smoothstep(float(0.85).add(s), float(1.0).add(s), elevation))
 
     material.colorNode = mix(finalColor, sideColor, sideMask)
   }
@@ -353,6 +354,7 @@ function TerrainLayer({
   smooth = 0,
   heightScale = 1.0,
   baseHeight = 2.0,
+  seaLevel = 0,
   position = [0, 0, 0],
   onHeightData,
 }) {
@@ -454,7 +456,7 @@ function TerrainLayer({
     if (heightInfo && onHeightData) onHeightData(heightInfo)
   }, [heightInfo, onHeightData])
 
-  const material = useMemo(() => createTerrainMaterial(mergedColors, texMap), [mergedColors, texMap])
+  const material = useMemo(() => createTerrainMaterial(mergedColors, texMap, seaLevel), [mergedColors, texMap, seaLevel])
 
   useEffect(() => {
     return () => {
