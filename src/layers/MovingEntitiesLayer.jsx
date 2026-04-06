@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import { Color, DoubleSide, InstancedMesh, Matrix4, PlaneGeometry } from 'three'
 import { MeshBasicNodeMaterial } from 'three/webgpu'
-import { billboarding, instanceIndex, shapeCircle } from 'three/tsl'
+import { billboarding, float, instanceIndex, shapeCircle, vec3 } from 'three/tsl'
 
 import { createInterpolationPass } from '../compute/createInterpolationPass'
 import {
@@ -50,8 +50,12 @@ function MovingEntitiesLayer({ entityCount, view }) {
         mesh.setColorAt(index, getEntityColor(dataset.rawObservationBuffer, index))
       }
 
+      // compute shader は XY 平面 vec3(x, y, 0) で出力するが、
+      // シーンは Y-up なので XZ 平面に変換する（billboarding は親 group の回転を無視するため）
+      const rawPos = system.positionNode.element(instanceIndex)
+      const xzPos = vec3(rawPos.x, float(0), rawPos.y.negate())
       material.vertexNode = billboarding({
-        position: system.positionNode.element(instanceIndex),
+        position: xzPos,
         horizontal: true,
         vertical: true,
       })

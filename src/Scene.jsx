@@ -4,13 +4,14 @@ import { MapControls } from '@react-three/drei'
 import LightingRig from './LightingRig'
 import SceneEffects from './effects/SceneEffects'
 import MaterialSamplesLayer from './layers/MaterialSamplesLayer'
-import RainLayer from './layers/RainLayer'
 import SkyLayer from './layers/SkyLayer'
 import GridLayer from './layers/GridLayer'
-import TerrainLayer from './layers/TerrainLayer'
 import WaterBlobLayer from './layers/WaterBlobLayer'
 import WaterBoxLayer from './layers/WaterBoxLayer'
 import WaterOceanLayer from './layers/WaterOceanLayer'
+import { WORLD_VIEW } from './gis/views'
+import BaseMapLayer from './layers/BaseMapLayer'
+import MovingEntitiesLayer from './layers/MovingEntitiesLayer'
 
 /*
   このファイルの処理の流れ
@@ -34,7 +35,7 @@ import WaterOceanLayer from './layers/WaterOceanLayer'
   「全レイヤーを直接合成する」
   という画面構成の入口になっている。
 */
-function Scene() {
+function Scene({ entityCount = 2000 }) {
   const [heightInfo, setHeightInfo] = useState(null)
   return (
     <>
@@ -102,7 +103,13 @@ function Scene() {
 
           </group>
 
-        
+      {/* GIS: GeoJSON 地図（XY→XZ 回転で床面に配置） */}
+      <group position={[0, -1.25, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <BaseMapLayer url='/data/world.geojson' view={WORLD_VIEW} />
+      </group>
+
+      {/* GPU 移動体パーティクル（billboarding は親の回転を無視するため独立配置） */}
+      <MovingEntitiesLayer key={entityCount} entityCount={entityCount} view={WORLD_VIEW} />
     </>
   )
 }
