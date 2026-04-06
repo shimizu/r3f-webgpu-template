@@ -75,7 +75,7 @@ function Scene() {
         </mesh>
 
         //ポストプロセッシング: Bloom + Godrays 
-        {/*<SceneEffects />*/}
+        <SceneEffects />
 
 
 

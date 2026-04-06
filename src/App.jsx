@@ -18,7 +18,6 @@ async function createRenderer(props) {
 }
 
 function App() {
-  const { rainEnabled } = useControls('Rain', { rainEnabled: true })
 
   return (
     <div className='app-shell'>
@@ -26,7 +25,7 @@ function App() {
       <Canvas
         shadows
 
-        camera={{ position: [0, 8, -25], fov: 36, near: 0.01, far: 500 }}
+        camera={{ position: [0, 14, -18], fov: 36, near: 0.01, far: 500 }}
         gl={createRenderer}
       >
         <Scene  />

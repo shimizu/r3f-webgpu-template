@@ -28,8 +28,8 @@ const MATERIAL_SAMPLES = [
     label: 'Metal',
     cubeCamera: { frames: Infinity, resolution: 256 },
     material: {
-      color: '#f3f4f6',
-      roughness: 0.01,
+      color: '#d4a017',
+      roughness: 0.3,
       metalness: 1,
       clearcoat: 0,
       clearcoatRoughness: 0,
@@ -74,7 +74,7 @@ function SampleSphere({ sample }) {
   const rotation = [0, isGlass ? Math.PI * 0.22 : 0, 0]
 
   const sphere = (environmentMap) => (
-    <mesh castShadow receiveShadow position={meshPosition} rotation={rotation}>
+    <mesh castShadow={!useCubeCamera} receiveShadow position={meshPosition} rotation={rotation}>
       <sphereGeometry args={[1.35, 96, 96]} />
       <meshPhysicalMaterial {...sample.material} envMap={environmentMap} />
     </mesh>
@@ -82,6 +82,12 @@ function SampleSphere({ sample }) {
 
   return (
     <group key={sample.label}>
+      {useCubeCamera && (
+        <mesh castShadow position={sample.position}>
+          <sphereGeometry args={[1.35, 96, 96]} />
+          <meshBasicMaterial transparent opacity={0} />
+        </mesh>
+      )}
       {useCubeCamera ? (
         <CubeCamera frames={sample.cubeCamera.frames} resolution={sample.cubeCamera.resolution} position={sample.position}>
           {sphere}
