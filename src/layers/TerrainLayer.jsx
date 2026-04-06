@@ -138,12 +138,14 @@ function buildTerrainGeometry(demData, { terrainWidth, targetHeight, terrainDept
   // ブラー済み DEM から標高値を取得 (行反転: GeoTIFF は北→南)
   function getElev(col, row) {
     const demRow = rows - 1 - row
-    return blurred[demRow * cols + col] * elevToWorld
+    const demCol = cols - 1 - col
+    return blurred[demRow * cols + demCol] * elevToWorld
   }
 
   function getNormElev(col, row) {
     const demRow = rows - 1 - row
-    return (blurred[demRow * cols + col] - minElev) / elevRange
+    const demCol = cols - 1 - col
+    return (blurred[demRow * cols + demCol] - minElev) / elevRange
   }
 
   // --- 上面 ---
@@ -165,7 +167,7 @@ function buildTerrainGeometry(demData, { terrainWidth, targetHeight, terrainDept
       topPositions[vi * 3 + 1] = getElev(col, row)
       topPositions[vi * 3 + 2] = row * stepZ - halfD
       topNormElevs[vi] = getNormElev(col, row)
-      topUvs[vi * 2] = col / (cols - 1)
+      topUvs[vi * 2] = 1 - col / (cols - 1)
       topUvs[vi * 2 + 1] = row / (rows - 1)
     }
   }
