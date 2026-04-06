@@ -29,7 +29,7 @@ function App() {
         camera={{ position: [0, 8, -25], fov: 36, near: 0.01, far: 500 }}
         gl={createRenderer}
       >
-        <Scene rainEnabled={rainEnabled} />
+        <Scene  />
       </Canvas>
     </div>
   )

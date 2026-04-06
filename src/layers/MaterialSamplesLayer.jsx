@@ -2,7 +2,7 @@ import { CubeCamera } from '@react-three/drei'
 
 const MATERIAL_SAMPLES = [
   {
-    position: [-7.4, 0, 1.45],
+    position: [7.4, 0, 1.45],
     label: 'Matte',
     material: {
       color: '#8faece',
@@ -13,7 +13,7 @@ const MATERIAL_SAMPLES = [
     },
   },
   {
-    position: [-3.7, 0, 1.45],
+    position: [3.7, 0, 1.45],
     label: 'Semi Gloss',
     material: {
       color: '#88a6c8',
@@ -27,15 +27,15 @@ const MATERIAL_SAMPLES = [
     position: [0, 0, 1.45],
     label: 'Metal',
     material: {
-      color: '#d9dbde',
-      roughness: 0.18,
+      color: '#a37e18',
+      roughness: 0.5,
       metalness: 1,
-      clearcoat: 0.22,
-      clearcoatRoughness: 0.08,
+      clearcoat: 0,
+      clearcoatRoughness: 0,
     },
   },
   {
-    position: [3.7, 0, 1.45],
+    position: [-3.7, 0, 1.45],
     label: 'Mirror',
     material: {
       color: '#f3f4f6',
@@ -46,7 +46,7 @@ const MATERIAL_SAMPLES = [
     },
   },
   {
-    position: [7.4, 0, 1.45],
+    position: [-7.4, 0, 1.45],
     label: 'Glass',
     material: {
       color: '#8f8f96',
@@ -65,12 +65,13 @@ const MATERIAL_SAMPLES = [
   },
 ]
 
-const MIRROR_SAMPLE_INDEX = 3
+const CUBE_CAMERA_LABELS = ['Metal', 'Mirror']
 
-function SampleSphere({ sample, index }) {
-  const isMirror = index === MIRROR_SAMPLE_INDEX
-  const meshPosition = isMirror ? [0, 0, 0] : sample.position
-  const rotation = [0, index === 4 ? Math.PI * 0.22 : 0, 0]
+function SampleSphere({ sample }) {
+  const useCubeCamera = CUBE_CAMERA_LABELS.includes(sample.label)
+  const meshPosition = useCubeCamera ? [0, 0, 0] : sample.position
+  const isGlass = sample.label === 'Glass'
+  const rotation = [0, isGlass ? Math.PI * 0.22 : 0, 0]
 
   const sphere = (environmentMap) => (
     <mesh castShadow receiveShadow position={meshPosition} rotation={rotation}>
@@ -81,7 +82,7 @@ function SampleSphere({ sample, index }) {
 
   return (
     <group key={sample.label}>
-      {isMirror ? (
+      {useCubeCamera ? (
         <CubeCamera frames={Infinity} resolution={256} position={sample.position}>
           {sphere}
         </CubeCamera>
@@ -95,8 +96,8 @@ function SampleSphere({ sample, index }) {
 function MaterialSamplesLayer({ position = [0, 0, 0.02] }) {
   return (
     <group position={position}>
-      {MATERIAL_SAMPLES.map((sample, index) => (
-        <SampleSphere key={sample.label} sample={sample} index={index} />
+      {MATERIAL_SAMPLES.map((sample) => (
+        <SampleSphere key={sample.label} sample={sample} />
       ))}
     </group>
   )

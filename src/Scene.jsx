@@ -34,7 +34,7 @@ import WaterOceanLayer from './layers/WaterOceanLayer'
   「全レイヤーを直接合成する」
   という画面構成の入口になっている。
 */
-function Scene({ rainEnabled = true }) {
+function Scene() {
   const [heightInfo, setHeightInfo] = useState(null)
   return (
     <>
@@ -55,40 +55,18 @@ function Scene({ rainEnabled = true }) {
         target={[0, 0, 0]}
       />
 
-      {/*位置確認用
-      <mesh>
-        <boxGeometry  args={[10,10,10]}/>
-        <meshNormalMaterial/>
-      </mesh>        
  
-      <group position={[0, 0, 0]} rotation={[0, 0, 0]}>
-        <StageLayer />
-        <MaterialSamplesLayer />
-        <WaterBoxLayer
-          width={8}
-          height={8}
-          depth={2}
-          position={[-10, 2, -6]}
-        />
-        <WaterBlobLayer
-          width={8}
-          height={8}
-          depth={6}
-          position={[0, 2, -6]}
-        />
-        </group>
-        <WaterOceanLayer
-          width={15.9}
-          height={15.9}
-          depth={2}
-          opacity={0.5}
-          position={[0, 2.0001, 0]}
-        />
-        
+
+
+      <GridLayer position={[0, -1.25, 0]} />
+
+
+      <MaterialSamplesLayer />
+
 
         //ブルーム確認用: 高 emissive の光る球体 
         <mesh position={[0, 5, 0]}>
-          <sphereGeometry args={[0.5, 32, 32]} />
+          <sphereGeometry args={[1, 32, 32]} />
           <meshStandardMaterial
             color='#ff6600'
             emissive='#ff6600'
@@ -99,51 +77,31 @@ function Scene({ rainEnabled = true }) {
         //ポストプロセッシング: Bloom + Godrays 
         <SceneEffects />
 
-     */}
 
-        <GridLayer position={[0, -2, 0]} />
 
-        <WaterOceanLayer
-          width={15.99}
-          height={15.99}
-          depth={2}
-          opacity={0.5}
-          position={[0, 0, 0]}
-        />
-
-        <TerrainLayer
-          url="./dem/taiwan.tif"
-          texture="./dem/taiwan.png"
-          heightScale={0.5}
-          baseHeight={2}
-          smooth={1}
-          position={[0, 0, 0]}
-          onHeightData={setHeightInfo}
-          seaLevel={0.27}
-          colors={{
-            deepOcean: '#0a1a3a',
-            shallowOcean: '#1a6a8a',
-            shore: '#c2b280',
-            lowland: '#4a8a3a',
-            highland: '#9fdf8a',
-            mountain: '#8a7a6a',
-            peak: '#f0f0f0',
-            side: '#3a2a1a',
-          }}
-        />
-
-        {rainEnabled && (
-          <RainLayer
-            heightInfo={heightInfo}
-            position={[0, 0, 0]}
-            width={15.9}
-            depth={15.9}
-            topY={6}
-            particleCount={30000}
+        <group position={[0, 0, 10]} rotation={[0, 0, 0]}>
+          <WaterBoxLayer
+            width={5}
+            height={5}
+            depth={2}
+            position={[-10, 0, 0]}
           />
-        )}
+          <WaterBlobLayer
+            width={5}
+            height={5}
+            depth={4}
+            position={[0, 0, 0]}
+          />
 
-        {/*<axesHelper args={[10]} />*/}
+          <WaterOceanLayer
+            width={5}
+            height={5}
+            depth={2}
+            position={[10, 0, 0]}
+          />
+
+          </group>
+
         
     </>
   )
