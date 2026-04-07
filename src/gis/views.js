@@ -1,5 +1,5 @@
 export const WORLD_VIEW = {
-  centerLon: 0,
+  centerLon: 138,
   centerLat: 0,
   worldScale: 4.6,
   altitudeScale: 0,
