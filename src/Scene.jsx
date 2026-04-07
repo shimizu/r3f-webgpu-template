@@ -46,9 +46,6 @@ function Scene({ entityCount = 2000 }) {
       <LightingRig />
       <SkyLayer />
 
-      {/* カメラ操作。
-          このシーンでは左ドラッグを PAN にして、
-          地図を「掴んで動かす」感覚を優先している。 */}
       <MapControls
         enableDamping
         minDistance={6}
@@ -58,9 +55,8 @@ function Scene({ entityCount = 2000 }) {
 
  
 
-
+{/*
       <GridLayer position={[0, -1.25, 0]} />
-
 
       <MaterialSamplesLayer />
 
@@ -77,8 +73,6 @@ function Scene({ entityCount = 2000 }) {
 
         //ポストプロセッシング: Bloom + Godrays 
         <SceneEffects />
-
-
 
         <group position={[0, 0, 10]} rotation={[0, 0, 0]}>
           <WaterBoxLayer
@@ -103,13 +97,14 @@ function Scene({ entityCount = 2000 }) {
 
           </group>
 
+/*}
+
       {/* GIS: GeoJSON 地図（XY→XZ 回転で床面に配置） */}
-      <group position={[0, -1.25, -10]} rotation={[-Math.PI / 2, 0, -Math.PI ]}>
-        <GeojsonLayer url='/data/world.geojson' view={WORLD_VIEW} />
+      <group position={[0, -1.249, -10]} rotation={[-Math.PI / 2, 0, -Math.PI ]}>
+        <GeojsonLayer url='./data/world.geojson' view={WORLD_VIEW} />
+        <MovingEntitiesLayer key={entityCount} entityCount={entityCount} view={WORLD_VIEW} /> 
       </group>
 
-      {/* GPU 移動体パーティクル（billboarding は親の回転を無視するため独立配置） */}
-      {/*<MovingEntitiesLayer key={entityCount} entityCount={entityCount} view={WORLD_VIEW} /> */}
     </>
   )
 }
