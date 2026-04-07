@@ -38,42 +38,16 @@ import {
   instanceIndex,
   int,
   mix,
-  select,
   storage,
   uniform,
-  vec3,
 } from 'three/tsl'
 
-import { resolveProjectionOptions } from '../gis/projectionOptions'
+import { projectLonLatGPU } from '../gis/projectionGPU'
+import { createProjectionUniforms } from '../gis/projectionUniforms'
 import { OBSERVATION_OFFSET, OBSERVATION_STRIDE } from './observationLayout'
 
 const WORKGROUP_SIZE = 64
 const DEG2RAD = Math.PI / 180
-const PI = Math.PI
-  const TAU = Math.PI * 2
-
-// 補間後の lon/lat を、そのまま投影座標へ変換する小さな共通関数。
-// 「移動体だけ別の投影式にする」のを避けるため、Projection Pass と同じ考え方で計算する。
-function createProjectedNode(lonNode, latNode, worldScaleNode, centerLonNode, centerLatNode, cosCenterLatNode) {
-  const lambda = lonNode.sub(centerLonNode).mul(DEG2RAD).toVar()
-  const phi = latNode.sub(centerLatNode).mul(DEG2RAD).toVar()
-  const wrappedPositive = select(
-    lambda.greaterThan(float(PI)),
-    lambda.sub(float(TAU)),
-    lambda
-  ).toVar()
-  const wrappedLambda = select(
-    wrappedPositive.lessThan(float(-PI)),
-    wrappedPositive.add(float(TAU)),
-    wrappedPositive
-  ).toVar()
-
-  return vec3(
-    wrappedLambda.mul(cosCenterLatNode).mul(worldScaleNode),
-    phi.mul(worldScaleNode),
-    float(0)
-  )
-}
 
 export function createInterpolationPass(rawObservationBuffer, options = {}) {
   // 補間も compute shader で回すので、WebGPU 前提。
@@ -81,8 +55,8 @@ export function createInterpolationPass(rawObservationBuffer, options = {}) {
     throw new Error('このブラウザは WebGPU compute に未対応です')
   }
 
-  const projectionOptions = resolveProjectionOptions(options)
   const entityCount = rawObservationBuffer.length / OBSERVATION_STRIDE
+  const projUniforms = createProjectionUniforms(options)
 
   // 入力は「現在観測値と 1 つ前の観測値が一緒に入ったバッファ」。
   // 出力は「今この瞬間に描画すべき補間済み位置」。
@@ -112,14 +86,8 @@ export function createInterpolationPass(rawObservationBuffer, options = {}) {
     entityCount
   )
 
-  const centerLonNode = uniform(projectionOptions.centerLon)
-  const centerLatNode = uniform(projectionOptions.centerLat)
-  const worldScaleNode = uniform(projectionOptions.worldScale)
   const playbackTimeNode = uniform(0)
   const loopDurationNode = uniform(options.loopDuration ?? 12)
-  const cosCenterLatNode = uniform(
-    Math.cos(projectionOptions.centerLat * DEG2RAD)
-  )
 
   // 毎フレームの compute で、前回観測値 -> 現在観測値の間を補間してから投影する。
   // これにより CPU が各個体の座標更新を持たなくても動きが出せる。
@@ -159,14 +127,7 @@ export function createInterpolationPass(rawObservationBuffer, options = {}) {
 
     const currentLon = mix(prevLon, lon, blend).toVar()
     const currentLat = mix(prevLat, lat, blend).toVar()
-    const projected = createProjectedNode(
-      currentLon,
-      currentLat,
-      worldScaleNode,
-      centerLonNode,
-      centerLatNode,
-      cosCenterLatNode
-    ).toVar()
+    const projected = projectLonLatGPU(currentLon, currentLat, projUniforms).toVar()
 
     projectedPosition.assign(projected)
 
@@ -194,19 +155,7 @@ export function createInterpolationPass(rawObservationBuffer, options = {}) {
       // CPU 側は「今ループのどの時刻か」と view 変更だけを渡す。
       // 個体ごとの補間計算そのものは GPU 側に任せる。
       playbackTimeNode.value = playbackTime
-
-      if (typeof nextOptions.centerLon === 'number') {
-        centerLonNode.value = nextOptions.centerLon
-      }
-
-      if (typeof nextOptions.centerLat === 'number') {
-        centerLatNode.value = nextOptions.centerLat
-        cosCenterLatNode.value = Math.cos(nextOptions.centerLat * DEG2RAD)
-      }
-
-      if (typeof nextOptions.worldScale === 'number') {
-        worldScaleNode.value = nextOptions.worldScale
-      }
+      projUniforms.update(nextOptions)
 
       if (typeof nextOptions.loopDuration === 'number') {
         loopDurationNode.value = nextOptions.loopDuration

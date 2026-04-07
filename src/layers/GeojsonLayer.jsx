@@ -1,9 +1,12 @@
 /* eslint-disable react/no-unknown-property, react/prop-types */
 import { useEffect, useMemo, useState } from 'react'
 import { BufferGeometry, Color, Float32BufferAttribute } from 'three'
+import { LineBasicNodeMaterial, MeshBasicNodeMaterial, PointsNodeMaterial } from 'three/webgpu'
+import { positionLocal } from 'three/tsl'
 import earcut from 'earcut'
 
-import { projectLonLatToWorld } from '../gis/projection'
+import { normalizeLon, projectLonLatGPU } from '../gis/projectionGPU'
+import { createProjectionUniforms } from '../gis/projectionUniforms'
 
 const DEFAULT_SAMPLE_STEP = 0.2
 const Z_OFFSET = 0.025
@@ -51,6 +54,7 @@ function collectCoordinates(geometry, collector) {
 function appendSampledSegment(linePositions, pointPositions, previous, current, view) {
   const lonDelta = current[0] - previous[0]
   const latDelta = current[1] - previous[1]
+  const centerLon = view.centerLon ?? 0
   const steps = Math.max(
     1,
     Math.ceil(
@@ -64,33 +68,35 @@ function appendSampledSegment(linePositions, pointPositions, previous, current, 
 
   for (let step = 0; step <= steps; step += 1) {
     const t = step / steps
-    const lon = previous[0] + lonDelta * t
+    const lon = normalizeLon(previous[0] + lonDelta * t, centerLon)
     const lat = previous[1] + latDelta * t
-    sampledPoints.push(projectLonLatToWorld([lon, lat], view))
+    sampledPoints.push([lon, lat])
   }
 
   for (let index = 1; index < sampledPoints.length; index += 1) {
-    const previousPoint = sampledPoints[index - 1]
-    const currentPoint = sampledPoints[index]
-
-    linePositions.push(previousPoint[0], previousPoint[1], previousPoint[2])
-    linePositions.push(currentPoint[0], currentPoint[1], currentPoint[2])
+    const prev = sampledPoints[index - 1]
+    const curr = sampledPoints[index]
+    linePositions.push(prev[0], prev[1], 0)
+    linePositions.push(curr[0], curr[1], 0)
   }
 
   sampledPoints.forEach((point) => {
-    pointPositions.push(point[0], point[1], point[2])
+    pointPositions.push(point[0], point[1], 0)
   })
 }
 
 function triangulatePolygon(rings, view) {
-  const projectedRings = rings.map((ring) =>
-    ring.map((coord) => projectLonLatToWorld(coord, view))
+  const centerLon = view.centerLon ?? 0
+
+  // centerLon 基準で lon を正規化し、earcut と GPU 投影の折り返しを一致させる
+  const normalizedRings = rings.map((ring) =>
+    ring.map((coord) => [normalizeLon(coord[0], centerLon), coord[1]])
   )
 
   const flatCoords = []
   const holeIndices = []
 
-  projectedRings.forEach((ring, ringIndex) => {
+  normalizedRings.forEach((ring, ringIndex) => {
     if (ringIndex > 0) {
       holeIndices.push(flatCoords.length / 2)
     }
@@ -210,13 +216,46 @@ function GeojsonLayer({ url, view }) {
     return { lineGeometry, pointGeometry, fillGeometry }
   }, [geojson, view])
 
+  // GPU 投影用マテリアル: position 属性の lon/lat を positionNode で投影する
+  // centerLon 変更時は view が変わり useMemo([geojson, view]) で geometry が再生成される
+  const { fillMaterial, lineMaterial, pointMaterial } = useMemo(() => {
+    const projUniforms = createProjectionUniforms(view)
+    const projectedPos = projectLonLatGPU(positionLocal.x, positionLocal.y, projUniforms)
+
+    const fillMaterial = new MeshBasicNodeMaterial({
+      vertexColors: true,
+      transparent: true,
+      opacity: FILL_OPACITY,
+    })
+    fillMaterial.positionNode = projectedPos
+
+    const lineMaterial = new LineBasicNodeMaterial({
+      color: LINE_STYLE.color,
+      transparent: true,
+      opacity: LINE_STYLE.opacity,
+    })
+    lineMaterial.positionNode = projectedPos
+
+    const pointMaterial = new PointsNodeMaterial({
+      color: POINT_STYLE.color,
+      size: POINT_STYLE.size,
+      sizeAttenuation: true,
+    })
+    pointMaterial.positionNode = projectedPos
+
+    return { fillMaterial, lineMaterial, pointMaterial }
+  }, [view])
+
   useEffect(() => {
     return () => {
       lineGeometry?.dispose()
       pointGeometry?.dispose()
       fillGeometry?.dispose()
+      fillMaterial?.dispose()
+      lineMaterial?.dispose()
+      pointMaterial?.dispose()
     }
-  }, [lineGeometry, pointGeometry, fillGeometry])
+  }, [lineGeometry, pointGeometry, fillGeometry, fillMaterial, lineMaterial, pointMaterial])
 
   if (!lineGeometry || !pointGeometry || !fillGeometry) {
     return null
@@ -224,15 +263,9 @@ function GeojsonLayer({ url, view }) {
 
   return (
     <group position={[0, 0, Z_OFFSET]}>
-      <mesh geometry={fillGeometry}>
-        <meshBasicMaterial vertexColors transparent opacity={FILL_OPACITY} />
-      </mesh>
-      <lineSegments geometry={lineGeometry}>
-        <lineBasicMaterial color={LINE_STYLE.color} transparent opacity={LINE_STYLE.opacity} />
-      </lineSegments>
-      <points geometry={pointGeometry}>
-        <pointsMaterial color={POINT_STYLE.color} size={POINT_STYLE.size} sizeAttenuation />
-      </points>
+      <mesh geometry={fillGeometry} material={fillMaterial} />
+      <lineSegments geometry={lineGeometry} material={lineMaterial} />
+      <points geometry={pointGeometry} material={pointMaterial} />
     </group>
   )
 }
