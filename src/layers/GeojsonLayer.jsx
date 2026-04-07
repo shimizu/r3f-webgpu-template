@@ -4,6 +4,11 @@ import { BufferGeometry, Float32BufferAttribute } from 'three'
 
 import { projectLonLatToWorld } from '../gis/projection'
 
+const DEFAULT_SAMPLE_STEP = 0.2
+const Z_OFFSET = 0.025
+const LINE_STYLE = { color: '#6dcff6', opacity: 0.5 }
+const POINT_STYLE = { color: '#ffffff', size: 0.12 }
+
 function collectCoordinates(geometry, collector) {
   if (!geometry) {
     return
@@ -38,8 +43,8 @@ function appendSampledSegment(linePositions, pointPositions, previous, current, 
     1,
     Math.ceil(
       Math.max(
-        Math.abs(lonDelta) / (view.sampleLonStep ?? 0.2),
-        Math.abs(latDelta) / (view.sampleLatStep ?? 0.2)
+        Math.abs(lonDelta) / (view.sampleLonStep ?? DEFAULT_SAMPLE_STEP),
+        Math.abs(latDelta) / (view.sampleLatStep ?? DEFAULT_SAMPLE_STEP)
       )
     )
   )
@@ -141,12 +146,12 @@ function GeojsonLayer({ url, view }) {
   }
 
   return (
-    <group position={[0, 0, 0.025]}>
+    <group position={[0, 0, Z_OFFSET]}>
       <lineSegments geometry={lineGeometry}>
-        <lineBasicMaterial color='#6dcff6' transparent opacity={0.5} />
+        <lineBasicMaterial color={LINE_STYLE.color} transparent opacity={LINE_STYLE.opacity} />
       </lineSegments>
       <points geometry={pointGeometry}>
-        <pointsMaterial color='#ffffff' size={0.12} sizeAttenuation />
+        <pointsMaterial color={POINT_STYLE.color} size={POINT_STYLE.size} sizeAttenuation />
       </points>
     </group>
   )

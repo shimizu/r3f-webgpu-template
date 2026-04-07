@@ -98,6 +98,82 @@ const OPACITY = {
   topMax: 0.65,   // 上面の最大不透明度 (斜めから見た時、フレネル連動)
 }
 
+const FLOW = {
+  timeX: 0.12,
+  timeZ: 0.08,
+  scaleZRatio: 0.8,
+  detailTimeX: 0.18,
+  detailTimeZ: 0.14,
+  detailScaleZRatio: 0.75,
+}
+
+const SIDE = {
+  noiseScale: [0.35, 0.35, 0.5],
+  noiseTimeX: 0.12,
+  noiseTimeY: -0.08,
+  bandFreqY: 2.2,
+  bandFreqZ: 0.5,
+  bandSpeed: 0.9,
+  pow: 3,
+  rippleMix: 0.06,
+}
+
+const GLINT = {
+  noiseScaleX: 0.4,
+  noiseScaleZ: 0.35,
+  noiseTimeX: 0.14,
+  noiseTimeZ: 0.1,
+  bandAFreqX: 2.8,
+  bandAFreqZ: 2.0,
+  bandASpeed: 2.0,
+  bandANoiseAmp: 4,
+  bandBFreqX: -1.8,
+  bandBFreqZ: 2.5,
+  bandBSpeed: 1.5,
+  bandBWaveAmp: 5,
+  smoothMin: 0.3,
+  smoothMax: 0.8,
+  reflectAdd: 0.15,
+}
+
+const CAUSTIC = {
+  aScaleX: 1.5,
+  aScaleZ: 1.3,
+  aTimeX: 0.15,
+  aTimeZ: 0.12,
+  bScaleX: -1.2,
+  bScaleZ: 1.8,
+  bTimeX: 0.1,
+  bTimeZ: 0.14,
+  smoothMin: 0.2,
+  smoothMax: 0.75,
+  depthMin: 0.1,
+  depthMax: 0.6,
+}
+
+const FOAM = {
+  noiseScaleX: 3.0,
+  noiseScaleZ: 2.8,
+  noiseTimeX: 0.35,
+  noiseTimeZ: 0.3,
+}
+
+const SURFACE = {
+  edgeSmoothMin: 0.78,
+  edgeSmoothMax: 1.0,
+  waveShadeSmoothMin: -0.1,
+  waveShadeSmoothMax: 0.1,
+  waveShadeColorMix: 0.7,
+  depthTintMix: 0.8,
+  topMaskMix: 0.9,
+  attenuationMix: 0.9,
+  bodyOpacitySideMix: 0.9,
+  topOpacitySideMix: 0.8,
+  topOpacityTopMix: 0.6,
+}
+
+const CUBECAMERA_RESOLUTION = 256
+
 function createWaveHeightNode() {
   const swell = positionLocal.z
     .mul(WAVE.swellFreqY)
@@ -122,16 +198,16 @@ function createWaveHeightNode() {
 
   const flowNoise = mx_noise_float(
     vec3(
-      positionLocal.x.mul(WAVE.flowNoiseScale).add(time.mul(0.12)),
-      positionLocal.z.mul(WAVE.flowNoiseScale * 0.8).sub(time.mul(0.08)),
+      positionLocal.x.mul(WAVE.flowNoiseScale).add(time.mul(FLOW.timeX)),
+      positionLocal.z.mul(WAVE.flowNoiseScale * FLOW.scaleZRatio).sub(time.mul(FLOW.timeZ)),
       0
     )
   ).mul(WAVE.flowNoiseAmplitude)
 
   const detailNoise = mx_noise_float(
     vec3(
-      positionLocal.x.mul(WAVE.detailNoiseScale).add(time.mul(0.18)),
-      positionLocal.z.mul(WAVE.detailNoiseScale * 0.75).sub(time.mul(0.14)),
+      positionLocal.x.mul(WAVE.detailNoiseScale).add(time.mul(FLOW.detailTimeX)),
+      positionLocal.z.mul(WAVE.detailNoiseScale * FLOW.detailScaleZRatio).sub(time.mul(FLOW.detailTimeZ)),
       0
     )
   ).mul(WAVE.detailNoiseAmplitude)
@@ -175,16 +251,16 @@ function createWaterBodyMaterial(environmentMap, { width, height, depth }) {
       positionLocal.z.div(float(height * 0.5))
     )
   )
-  const edgeFade = smoothstep(float(0.78), float(1.0), edgeDistance).oneMinus()
+  const edgeFade = smoothstep(float(SURFACE.edgeSmoothMin), float(SURFACE.edgeSmoothMax), edgeDistance).oneMinus()
 
-  const sideMask = normalLocal.y.abs().oneMinus().pow(3)
+  const sideMask = normalLocal.y.abs().oneMinus().pow(SIDE.pow)
   const sideNoise = mx_noise_float(
-    positionWorld.mul(vec3(0.35, 0.35, 0.5)).add(vec3(time.mul(0.12), time.mul(-0.08), 0))
+    positionWorld.mul(vec3(...SIDE.noiseScale)).add(vec3(time.mul(SIDE.noiseTimeX), time.mul(SIDE.noiseTimeY), 0))
   ).mul(0.5)
   const sideBands = positionLocal.y
-    .mul(2.2)
-    .add(positionLocal.z.mul(0.5))
-    .sub(time.mul(0.9))
+    .mul(SIDE.bandFreqY)
+    .add(positionLocal.z.mul(SIDE.bandFreqZ))
+    .sub(time.mul(SIDE.bandSpeed))
     .sin()
     .mul(0.5)
     .add(0.5)
@@ -192,53 +268,53 @@ function createWaterBodyMaterial(environmentMap, { width, height, depth }) {
 
   const topDisplacement = waveHeight.mul(topMask).mul(edgeFade).mul(WAVE.displacementStrength)
 
-  const waveShade = smoothstep(float(-0.1), float(0.1), waveHeight)
+  const waveShade = smoothstep(float(SURFACE.waveShadeSmoothMin), float(SURFACE.waveShadeSmoothMax), waveHeight)
 
   const glintNoise = mx_noise_float(
     vec3(
-      positionLocal.x.mul(0.4).add(time.mul(0.14)),
-      positionLocal.z.mul(0.35).sub(time.mul(0.1)),
+      positionLocal.x.mul(GLINT.noiseScaleX).add(time.mul(GLINT.noiseTimeX)),
+      positionLocal.z.mul(GLINT.noiseScaleZ).sub(time.mul(GLINT.noiseTimeZ)),
       0
     )
   )
   const glintBandsA = positionLocal.x
-    .mul(2.8)
-    .add(positionLocal.z.mul(2.0))
-    .sub(time.mul(2.0))
-    .add(glintNoise.mul(4))
+    .mul(GLINT.bandAFreqX)
+    .add(positionLocal.z.mul(GLINT.bandAFreqZ))
+    .sub(time.mul(GLINT.bandASpeed))
+    .add(glintNoise.mul(GLINT.bandANoiseAmp))
     .sin()
     .abs()
   const glintBandsB = positionLocal.x
-    .mul(-1.8)
-    .add(positionLocal.z.mul(2.5))
-    .add(time.mul(1.5))
-    .add(waveHeight.mul(5))
+    .mul(GLINT.bandBFreqX)
+    .add(positionLocal.z.mul(GLINT.bandBFreqZ))
+    .add(time.mul(GLINT.bandBSpeed))
+    .add(waveHeight.mul(GLINT.bandBWaveAmp))
     .sin()
     .abs()
   const topGlint = glintBandsA
     .mul(glintBandsB)
-    .smoothstep(float(0.3), float(0.8))
+    .smoothstep(float(GLINT.smoothMin), float(GLINT.smoothMax))
     .mul(topMask)
     .mul(edgeFade)
 
   // フェイクコースティクス
   const causticA = mx_noise_float(
     vec3(
-      positionLocal.x.mul(1.5).add(time.mul(0.15)),
-      positionLocal.z.mul(1.3).sub(time.mul(0.12)),
+      positionLocal.x.mul(CAUSTIC.aScaleX).add(time.mul(CAUSTIC.aTimeX)),
+      positionLocal.z.mul(CAUSTIC.aScaleZ).sub(time.mul(CAUSTIC.aTimeZ)),
       0
     )
   ).sin().abs()
   const causticB = mx_noise_float(
     vec3(
-      positionLocal.x.mul(-1.2).add(time.mul(0.1)),
-      positionLocal.z.mul(1.8).add(time.mul(0.14)),
+      positionLocal.x.mul(CAUSTIC.bScaleX).add(time.mul(CAUSTIC.bTimeX)),
+      positionLocal.z.mul(CAUSTIC.bScaleZ).add(time.mul(CAUSTIC.bTimeZ)),
       0
     )
   ).sin().abs()
   const causticPattern = causticA.mul(causticB)
-    .smoothstep(float(0.2), float(0.75))
-  const causticDepthMask = depthTint.oneMinus().smoothstep(float(0.1), float(0.6))
+    .smoothstep(float(CAUSTIC.smoothMin), float(CAUSTIC.smoothMax))
+  const causticDepthMask = depthTint.oneMinus().smoothstep(float(CAUSTIC.depthMin), float(CAUSTIC.depthMax))
   const causticIntensity = causticPattern.mul(causticDepthMask).mul(EFFECTS.causticIntensity)
 
   // ホワイトウォーター
@@ -248,24 +324,24 @@ function createWaterBodyMaterial(environmentMap, { width, height, depth }) {
   )
   const foamNoise = mx_noise_float(
     vec3(
-      positionLocal.x.mul(3.0).add(time.mul(0.35)),
-      positionLocal.z.mul(2.8).sub(time.mul(0.3)),
+      positionLocal.x.mul(FOAM.noiseScaleX).add(time.mul(FOAM.noiseTimeX)),
+      positionLocal.z.mul(FOAM.noiseScaleZ).sub(time.mul(FOAM.noiseTimeZ)),
       0
     )
   ).mul(0.5).add(0.5)
   const foam = foamThreshold.mul(foamNoise).mul(topMask).mul(edgeFade)
 
   // 水面カラー
-  const surfaceColor = mix(color(COLORS.surfaceLight), color(COLORS.surfaceDark), waveShade.mul(0.7))
+  const surfaceColor = mix(color(COLORS.surfaceLight), color(COLORS.surfaceDark), waveShade.mul(SURFACE.waveShadeColorMix))
   const topColor = mix(surfaceColor, color(COLORS.surfaceGlint), topGlint.mul(EFFECTS.glintStrength))
   const topWithFoam = mix(topColor, color(COLORS.foam), foam.mul(EFFECTS.foamStrength))
 
   // 側面カラー
-  const sideColor = mix(color(COLORS.sideDeep), color(COLORS.sideShallow), depthTint.mul(0.8))
+  const sideColor = mix(color(COLORS.sideDeep), color(COLORS.sideShallow), depthTint.mul(SURFACE.depthTintMix))
   const sideWithCaustic = mix(sideColor, color(COLORS.caustic), causticIntensity)
-  const sideWithRipple = mix(sideWithCaustic, color(COLORS.sideRipple), sideRipple.mul(0.06))
+  const sideWithRipple = mix(sideWithCaustic, color(COLORS.sideRipple), sideRipple.mul(SIDE.rippleMix))
 
-  const finalColor = mix(sideWithRipple, topWithFoam, topMask.mul(0.9))
+  const finalColor = mix(sideWithRipple, topWithFoam, topMask.mul(SURFACE.topMaskMix))
 
   // フレネル
   const viewDirection = cameraPosition.sub(positionWorld).normalize()
@@ -276,14 +352,14 @@ function createWaterBodyMaterial(environmentMap, { width, height, depth }) {
     .pow(EFFECTS.fresnelPower)
   const topReflectivity = fresnel
     .mul(EFFECTS.fresnelStrength)
-    .add(topGlint.mul(0.15))
+    .add(topGlint.mul(GLINT.reflectAdd))
     .mul(topMask)
   const reflectiveColor = mix(finalColor, color(COLORS.reflection), topReflectivity)
 
   // 透過度
-  const bodyOpacity = mix(float(OPACITY.bodyMin), float(OPACITY.bodyMax), sideMask.mul(0.9))
+  const bodyOpacity = mix(float(OPACITY.bodyMin), float(OPACITY.bodyMax), sideMask.mul(SURFACE.bodyOpacitySideMix))
   const topOpacity = mix(float(OPACITY.topMin), float(OPACITY.topMax), fresnel)
-  const finalOpacity = mix(topOpacity, bodyOpacity, sideMask.mul(0.8).add(topMask.oneMinus().mul(0.6)))
+  const finalOpacity = mix(topOpacity, bodyOpacity, sideMask.mul(SURFACE.topOpacitySideMix).add(topMask.oneMinus().mul(SURFACE.topOpacityTopMix)))
 
   material.positionNode = positionLocal.add(vec3(0, topDisplacement, 0))
   material.colorNode = reflectiveColor
@@ -298,7 +374,7 @@ function createWaterBodyMaterial(environmentMap, { width, height, depth }) {
   material.attenuationColorNode = mix(
     color(COLORS.attenuationShallow),
     color(COLORS.attenuationDeep),
-    depthTint.mul(0.9)
+    depthTint.mul(SURFACE.attenuationMix)
   )
 
   return material
@@ -312,7 +388,7 @@ function WaterBoxLayer({
   segments = DEFAULT_SEGMENTS,
 }) {
   return (
-    <CubeCamera frames={1} resolution={256} position={position}>
+    <CubeCamera frames={1} resolution={CUBECAMERA_RESOLUTION} position={position}>
       {(environmentMap) => (
         <WaterBoxMesh
           environmentMap={environmentMap}

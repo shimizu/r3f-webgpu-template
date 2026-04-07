@@ -1,5 +1,7 @@
 import { CubeCamera } from '@react-three/drei'
 
+const SPHERE_GEOMETRY = { radius: 1.35, segments: 96 }
+
 const MATERIAL_SAMPLES = [
   {
     position: [7.4, 0, 1.45],
@@ -75,7 +77,7 @@ function SampleSphere({ sample }) {
 
   const sphere = (environmentMap) => (
     <mesh castShadow={!useCubeCamera} receiveShadow position={meshPosition} rotation={rotation}>
-      <sphereGeometry args={[1.35, 96, 96]} />
+      <sphereGeometry args={[SPHERE_GEOMETRY.radius, SPHERE_GEOMETRY.segments, SPHERE_GEOMETRY.segments]} />
       <meshPhysicalMaterial {...sample.material} envMap={environmentMap} />
     </mesh>
   )
@@ -84,7 +86,7 @@ function SampleSphere({ sample }) {
     <group key={sample.label}>
       {useCubeCamera && (
         <mesh castShadow position={sample.position}>
-          <sphereGeometry args={[1.35, 96, 96]} />
+          <sphereGeometry args={[SPHERE_GEOMETRY.radius, SPHERE_GEOMETRY.segments, SPHERE_GEOMETRY.segments]} />
           <meshBasicMaterial transparent opacity={0} />
         </mesh>
       )}

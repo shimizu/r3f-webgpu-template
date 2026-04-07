@@ -27,6 +27,9 @@ const GRID_DEFAULTS = {
   lineColor: '#ffffff',   // グリッド線の色
   lineOpacity: 0.3,       // メインラインの不透明度
   subLineOpacity: 0.15,   // サブラインの不透明度
+  smoothstepEdge: 0.01,  // smoothstep のアンチエイリアス幅
+  roughness: 0.95,
+  metalness: 0,
 }
 
 function createGridMaterial(options = {}) {
@@ -42,8 +45,8 @@ function createGridMaterial(options = {}) {
   } = options
 
   const material = new MeshPhysicalNodeMaterial({
-    roughness: 0.95,
-    metalness: 0,
+    roughness: GRID_DEFAULTS.roughness,
+    metalness: GRID_DEFAULTS.metalness,
   })
 
   // ワールド座標の XZ を使ってグリッド線を生成
@@ -54,16 +57,16 @@ function createGridMaterial(options = {}) {
   const subFracX = abs(fract(wx.div(subGridScale)).sub(0.5))
   const subFracZ = abs(fract(wz.div(subGridScale)).sub(0.5))
   const subHalfWidth = float(subLineWidth / subGridScale / 2)
-  const subLineX = smoothstep(subHalfWidth.add(0.01), subHalfWidth, subFracX)
-  const subLineZ = smoothstep(subHalfWidth.add(0.01), subHalfWidth, subFracZ)
+  const subLineX = smoothstep(subHalfWidth.add(GRID_DEFAULTS.smoothstepEdge), subHalfWidth, subFracX)
+  const subLineZ = smoothstep(subHalfWidth.add(GRID_DEFAULTS.smoothstepEdge), subHalfWidth, subFracZ)
   const subLine = max(subLineX, subLineZ).mul(subLineOpacity)
 
   // メイングリッド: 同様のパターン
   const mainFracX = abs(fract(wx.div(gridScale)).sub(0.5))
   const mainFracZ = abs(fract(wz.div(gridScale)).sub(0.5))
   const mainHalfWidth = float(lineWidth / gridScale / 2)
-  const mainLineX = smoothstep(mainHalfWidth.add(0.01), mainHalfWidth, mainFracX)
-  const mainLineZ = smoothstep(mainHalfWidth.add(0.01), mainHalfWidth, mainFracZ)
+  const mainLineX = smoothstep(mainHalfWidth.add(GRID_DEFAULTS.smoothstepEdge), mainHalfWidth, mainFracX)
+  const mainLineZ = smoothstep(mainHalfWidth.add(GRID_DEFAULTS.smoothstepEdge), mainHalfWidth, mainFracZ)
   const mainLine = max(mainLineX, mainLineZ).mul(lineOpacity)
 
   // 合成: サブとメインの強い方を採用

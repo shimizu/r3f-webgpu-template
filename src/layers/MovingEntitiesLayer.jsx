@@ -15,13 +15,15 @@ import { createMockObservationBuffer } from '../data/mockObservations'
 
 const ENTITY_SIZE = 0.017
 const LOOP_DURATION = 6
+const ENTITY_COLORS = { aircraft: '#ffd166', default: '#66d9ff' }
+const ENTITY_MATERIAL = { color: '#ffffff', alphaTest: 0.5 }
 
 function getEntityColor(rawObservationBuffer, index) {
   const type = rawObservationBuffer[index * OBSERVATION_STRIDE + OBSERVATION_OFFSET.type]
 
   return type === ENTITY_TYPE.aircraft
-    ? new Color('#ffd166')
-    : new Color('#66d9ff')
+    ? new Color(ENTITY_COLORS.aircraft)
+    : new Color(ENTITY_COLORS.default)
 }
 
 function MovingEntitiesLayer({ entityCount, view }) {
@@ -37,7 +39,7 @@ function MovingEntitiesLayer({ entityCount, view }) {
       })
       const geometry = new PlaneGeometry(ENTITY_SIZE, ENTITY_SIZE, 1, 1)
       const material = new MeshBasicNodeMaterial({
-        color: '#ffffff',
+        color: ENTITY_MATERIAL.color,
         transparent: true,
         depthWrite: false,
         side: DoubleSide,
@@ -60,7 +62,7 @@ function MovingEntitiesLayer({ entityCount, view }) {
         vertical: true,
       })
       material.opacityNode = shapeCircle()
-      material.alphaTest = 0.5
+      material.alphaTest = ENTITY_MATERIAL.alphaTest
       mesh.frustumCulled = false
 
       return {

@@ -38,6 +38,9 @@ const OPACITY_SPEED_REF = 0.1       // boost が最大になる速度
 const SPLASH_SIZE = 0.01            // スプラッシュ粒子の基本サイズ
 const SPLASH_OPACITY = 0.4          // スプラッシュの不透明度
 const SPLASH_COLOR = '#ccddff'      // スプラッシュの色
+const SPLASH_LIFE_MAX = 0.4         // スプラッシュ最大寿命
+const RAIN_COLOR = '#aaccff'
+const DEFAULT_DELTA = 1 / 60
 
 function RainLayer({
   position = [0, 0, 0],
@@ -70,7 +73,7 @@ function RainLayer({
     // ======== 雨メッシュ ========
     const rainGeometry = new PlaneGeometry(1, 1)
     const rainMaterial = new MeshBasicNodeMaterial({
-      color: '#aaccff',
+      color: RAIN_COLOR,
       transparent: true,
       depthWrite: false,
       side: DoubleSide,
@@ -147,9 +150,9 @@ function RainLayer({
 
       // 寿命に応じたサイズ: 発生直後に膨らみ、消える前に縮む
       const life = splashLifeNode.toVar()
-      const normalizedLife = life.div(0.4).toVar() // 0〜1 (maxLife=0.4)
+      const normalizedLife = life.div(SPLASH_LIFE_MAX).toVar()
       // 急速に膨らんでゆっくり縮む: sin カーブ
-      const sizeCurve = normalizedLife.mul(3.14159).sin().toVar()
+      const sizeCurve = normalizedLife.mul(Math.PI).sin().toVar()
       const size = float(SPLASH_SIZE).mul(sizeCurve).toVar()
 
       // ビュー空間 billboarding
@@ -166,7 +169,7 @@ function RainLayer({
     // スプラッシュ opacity: 寿命に応じてフェードアウト
     splashMaterial.opacityNode = Fn(() => {
       const life = system.splashLifeNode.element(instanceIndex)
-      const normalizedLife = life.div(0.4)
+      const normalizedLife = life.div(SPLASH_LIFE_MAX)
       // 後半で急速にフェードアウト
       return normalizedLife.mul(float(SPLASH_OPACITY))
     })()
@@ -199,7 +202,7 @@ function RainLayer({
     systemRef.current.update(
       renderer,
       state.clock.elapsedTime,
-      state.clock.getDelta() || 1 / 60
+      state.clock.getDelta() || DEFAULT_DELTA
     )
   })
 

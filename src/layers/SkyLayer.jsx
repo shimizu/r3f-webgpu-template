@@ -38,6 +38,27 @@ const DOME = {
   segments: 32,
 }
 
+const SKY_GRADIENT = {
+  horizonToZenithMin: -0.1,
+  horizonToZenithMax: 0.8,
+  groundToHorizonMin: -0.3,
+  groundToHorizonMax: 0.0,
+}
+
+const CLOUD_TSL = {
+  noiseNormalize: 0.5,
+  fbmBaseWeight: 0.7,
+  fbmDetailWeight: 0.3,
+  altitudeMaskMin: 0.0,
+  altitudeMaskMax: 0.2,
+  zenithFadeMin: 0.85,
+  zenithFadeMax: 0.7,
+  shadowSmoothMin: 0.4,
+  shadowSmoothMax: 0.7,
+  detailSpeedMultiplier: 1.5,
+  speedZRatio: 0.3,
+}
+
 function createSkyMaterial() {
   const material = new MeshBasicNodeMaterial({
     side: BackSide,
@@ -54,12 +75,12 @@ function createSkyMaterial() {
   const skyGradient = mix(
     color(SKY_COLORS.horizon),
     color(SKY_COLORS.zenith),
-    smoothstep(float(-0.1), float(0.8), altitude)
+    smoothstep(float(SKY_GRADIENT.horizonToZenithMin), float(SKY_GRADIENT.horizonToZenithMax), altitude)
   )
   const fullGradient = mix(
     color(SKY_COLORS.ground),
     skyGradient,
-    smoothstep(float(-0.3), float(0.0), altitude)
+    smoothstep(float(SKY_GRADIENT.groundToHorizonMin), float(SKY_GRADIENT.groundToHorizonMax), altitude)
   )
 
   // 雲: fBM ノイズで生成
@@ -69,16 +90,16 @@ function createSkyMaterial() {
     normalLocal.z.mul(CLOUD.baseScale),
     0
   )
-  const cloudUVAnimated = cloudUV.add(vec3(time.mul(CLOUD.speed), time.mul(CLOUD.speed * 0.3), 0))
+  const cloudUVAnimated = cloudUV.add(vec3(time.mul(CLOUD.speed), time.mul(CLOUD.speed * CLOUD_TSL.speedZRatio), 0))
 
   // 大きな雲の形状
-  const baseNoise = mx_noise_float(cloudUVAnimated).mul(0.5).add(0.5)
+  const baseNoise = mx_noise_float(cloudUVAnimated).mul(CLOUD_TSL.noiseNormalize).add(CLOUD_TSL.noiseNormalize)
   // 細部ディテール
   const detailNoise = mx_noise_float(
-    cloudUVAnimated.mul(CLOUD.detailScale).add(vec3(time.mul(CLOUD.speed * 1.5), 0, 0))
-  ).mul(0.5).add(0.5)
+    cloudUVAnimated.mul(CLOUD.detailScale).add(vec3(time.mul(CLOUD.speed * CLOUD_TSL.detailSpeedMultiplier), 0, 0))
+  ).mul(CLOUD_TSL.noiseNormalize).add(CLOUD_TSL.noiseNormalize)
   // fBM 合成
-  const cloudDensity = baseNoise.mul(0.7).add(detailNoise.mul(0.3))
+  const cloudDensity = baseNoise.mul(CLOUD_TSL.fbmBaseWeight).add(detailNoise.mul(CLOUD_TSL.fbmDetailWeight))
 
   // coverage と sharpness で雲の範囲を制御
   const cloudMask = cloudDensity
@@ -87,15 +108,15 @@ function createSkyMaterial() {
     .clamp(0, 1)
 
   // 雲は地平線より上のみ表示
-  const cloudAltitudeMask = smoothstep(float(0.0), float(0.2), altitude)
+  const cloudAltitudeMask = smoothstep(float(CLOUD_TSL.altitudeMaskMin), float(CLOUD_TSL.altitudeMaskMax), altitude)
   // 天頂付近は雲を薄く
-  const cloudZenithFade = smoothstep(float(0.85), float(0.7), altitude)
+  const cloudZenithFade = smoothstep(float(CLOUD_TSL.zenithFadeMin), float(CLOUD_TSL.zenithFadeMax), altitude)
   const finalCloudMask = cloudMask.mul(cloudAltitudeMask).mul(cloudZenithFade)
 
   // 雲の陰影: ノイズの勾配で疑似ライティング
   const cloudShadow = baseNoise.smoothstep(
-    float(0.4),
-    float(0.7)
+    float(CLOUD_TSL.shadowSmoothMin),
+    float(CLOUD_TSL.shadowSmoothMax)
   ).oneMinus().mul(CLOUD.shadowStrength)
 
   const cloudColor = mix(

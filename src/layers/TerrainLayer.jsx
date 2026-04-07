@@ -14,6 +14,11 @@ import { fromArrayBuffer } from 'geotiff'
 
 const DEFAULT_SCALE = [16, 4, 16] // [幅, 標高レンジ, 奥行]
 const MAX_DEM_SIZE = 512          // これを超える場合は縮小読み込み
+const DEFAULT_NODATA = -9999
+
+const TERRAIN_MATERIAL = { roughness: 0.85, metalness: 0.0 }
+
+const ELEVATION_STOPS = [0.0, 0.3, 0.4, 0.5, 0.7, 0.85, 1.0]
 
 const DEFAULT_COLORS = {
   deepOcean: '#0a1a3a',
@@ -28,8 +33,8 @@ const DEFAULT_COLORS = {
 
 function createTerrainMaterial(colors, texMap, seaLevel = 0) {
   const material = new MeshPhysicalNodeMaterial({
-    roughness: 0.85,
-    metalness: 0.0,
+    roughness: TERRAIN_MATERIAL.roughness,
+    metalness: TERRAIN_MATERIAL.metalness,
     flatShading: false,
   })
 
@@ -45,17 +50,17 @@ function createTerrainMaterial(colors, texMap, seaLevel = 0) {
 
     const s = float(seaLevel)
     const c1 = mix(color(colors.deepOcean), color(colors.shallowOcean),
-      smoothstep(float(0.0).add(s), float(0.3).add(s), elevation))
+      smoothstep(float(ELEVATION_STOPS[0]).add(s), float(ELEVATION_STOPS[1]).add(s), elevation))
     const c2 = mix(c1, color(colors.shore),
-      smoothstep(float(0.3).add(s), float(0.4).add(s), elevation))
+      smoothstep(float(ELEVATION_STOPS[1]).add(s), float(ELEVATION_STOPS[2]).add(s), elevation))
     const c3 = mix(c2, color(colors.lowland),
-      smoothstep(float(0.4).add(s), float(0.5).add(s), elevation))
+      smoothstep(float(ELEVATION_STOPS[2]).add(s), float(ELEVATION_STOPS[3]).add(s), elevation))
     const c4 = mix(c3, color(colors.highland),
-      smoothstep(float(0.5).add(s), float(0.7).add(s), elevation))
+      smoothstep(float(ELEVATION_STOPS[3]).add(s), float(ELEVATION_STOPS[4]).add(s), elevation))
     const c5 = mix(c4, color(colors.mountain),
-      smoothstep(float(0.7).add(s), float(0.85).add(s), elevation))
+      smoothstep(float(ELEVATION_STOPS[4]).add(s), float(ELEVATION_STOPS[5]).add(s), elevation))
     const finalColor = mix(c5, color(colors.peak),
-      smoothstep(float(0.85).add(s), float(1.0).add(s), elevation))
+      smoothstep(float(ELEVATION_STOPS[5]).add(s), float(ELEVATION_STOPS[6]).add(s), elevation))
 
     material.colorNode = mix(finalColor, sideColor, sideMask)
   }
@@ -431,7 +436,7 @@ function TerrainLayer({
           values: rasters[0],
           width,
           height,
-          nodata: nodata ?? -9999,
+          nodata: nodata ?? DEFAULT_NODATA,
         })
       }
     }

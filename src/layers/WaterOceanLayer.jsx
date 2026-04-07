@@ -57,6 +57,65 @@ const EFFECTS = {
   waveSpeed: 0.9,
 }
 
+const UV_SCROLL = {
+  scaleRatios: [1.0, 1.1, 0.5, 0.7],
+  speedRatios: [1.0, 0.7, 0.8, -0.6, 0.4, 1.2, -0.5, 0.9],
+}
+
+const NORMAL_COMBINE = {
+  sampleWeight: 0.25,
+  range: 2.0,
+  offset: 1.0,
+}
+
+const CAUSTIC = {
+  aScaleX: 1.5,
+  aScaleY: 1.3,
+  aScaleZ: 1.2,
+  aTimeX: 0.15,
+  aTimeY: 0.12,
+  bScaleX: -1.2,
+  bScaleY: 1.8,
+  bScaleZ: 0.9,
+  bTimeX: 0.1,
+  bTimeY: 0.14,
+  smoothMin: 0.2,
+  smoothMax: 0.75,
+  depthMin: 0.1,
+  depthMax: 0.6,
+}
+
+const SIDE = {
+  noiseScale: [0.35, 0.35, 0.5],
+  noiseTimeX: 0.12,
+  noiseTimeY: -0.08,
+  bandFreqY: 2.2,
+  bandFreqZ: 0.5,
+  rippleMix: 0.06,
+}
+
+const SURFACE = {
+  topMaskMin: 0.5,
+  topMaskMax: 0.9,
+  sideMaskMin: 0.0,
+  sideMaskMax: 0.5,
+  depthMin: -0.5,
+  depthMax: 0.5,
+  depthTintMix: 0.8,
+  attenuationMix: 0.9,
+  waveShadeScale: 0.5,
+  waveShadeOffset: 0.5,
+}
+
+const OCEAN_OPACITY = {
+  topMin: 0.5,
+  topMax: 0.75,
+  sideMin: 0.92,
+  sideMax: 0.65,
+}
+
+const BOX_GEOMETRY_ARGS = [2, 1, 2, 1, 1, 1]
+
 function createWaterBoxMaterial(waterNormalsTexture, opacity) {
   const material = new MeshPhysicalNodeMaterial({
     transparent: true,
@@ -78,8 +137,8 @@ function createWaterBoxMaterial(waterNormalsTexture, opacity) {
 
   // --- 面の判定 ---
   // normalLocal.y ≈ 1 → 上面、≈ 0 → 側面、≈ -1 → 底面
-  const topMask = smoothstep(float(0.5), float(0.9), normalLocal.y)
-  const sideMask = normalLocal.y.abs().oneMinus().smoothstep(float(0.0), float(0.5))
+  const topMask = smoothstep(float(SURFACE.topMaskMin), float(SURFACE.topMaskMax), normalLocal.y)
+  const sideMask = normalLocal.y.abs().oneMinus().smoothstep(float(SURFACE.sideMaskMin), float(SURFACE.sideMaskMax))
 
   // --- 上面: ノーマルマップスクロールによる波 ---
   const uvCoord = uv()
@@ -87,10 +146,10 @@ function createWaterBoxMaterial(waterNormalsTexture, opacity) {
   const speed = EFFECTS.normalMapSpeed
 
   // 4方向にスクロールするノーマルマップを合成
-  const uv0 = uvCoord.mul(scale).add(vec2(time.mul(speed), time.mul(speed * 0.7)))
-  const uv1 = uvCoord.mul(scale * 1.1).sub(vec2(time.mul(speed * 0.8), time.mul(speed * -0.6)))
-  const uv2 = uvCoord.mul(scale * 0.5).add(vec2(time.mul(speed * 0.4), time.mul(speed * 1.2)))
-  const uv3 = uvCoord.mul(scale * 0.7).sub(vec2(time.mul(speed * -0.5), time.mul(speed * 0.9)))
+  const uv0 = uvCoord.mul(scale).add(vec2(time.mul(speed), time.mul(speed * UV_SCROLL.speedRatios[1])))
+  const uv1 = uvCoord.mul(scale * UV_SCROLL.scaleRatios[1]).sub(vec2(time.mul(speed * UV_SCROLL.speedRatios[2]), time.mul(speed * UV_SCROLL.speedRatios[3])))
+  const uv2 = uvCoord.mul(scale * UV_SCROLL.scaleRatios[2]).add(vec2(time.mul(speed * UV_SCROLL.speedRatios[4]), time.mul(speed * UV_SCROLL.speedRatios[5])))
+  const uv3 = uvCoord.mul(scale * UV_SCROLL.scaleRatios[3]).sub(vec2(time.mul(speed * UV_SCROLL.speedRatios[6]), time.mul(speed * UV_SCROLL.speedRatios[7])))
 
   const n0 = waterNormals.sample(uv0)
   const n1 = waterNormals.sample(uv1)
@@ -98,7 +157,7 @@ function createWaterBoxMaterial(waterNormalsTexture, opacity) {
   const n3 = waterNormals.sample(uv3)
 
   // 4サンプルを合成 → [-1, 1] に変換
-  const combinedNormal = n0.add(n1).add(n2).add(n3).mul(0.25).mul(2.0).sub(1.0)
+  const combinedNormal = n0.add(n1).add(n2).add(n3).mul(NORMAL_COMBINE.sampleWeight).mul(NORMAL_COMBINE.range).sub(NORMAL_COMBINE.offset)
   const surfaceNormal = vec3(
     combinedNormal.x.mul(EFFECTS.normalStrength),
     float(1.0),
@@ -109,10 +168,10 @@ function createWaterBoxMaterial(waterNormalsTexture, opacity) {
   material.normalNode = mix(normalLocal, surfaceNormal, topMask)
 
   // --- 深度グラデーション ---
-  const depthFactor = smoothstep(float(-0.5), float(0.5), positionLocal.y)
+  const depthFactor = smoothstep(float(SURFACE.depthMin), float(SURFACE.depthMax), positionLocal.y)
 
   // --- 上面カラー ---
-  const waveShade = combinedNormal.x.mul(0.5).add(0.5)
+  const waveShade = combinedNormal.x.mul(SURFACE.waveShadeScale).add(SURFACE.waveShadeOffset)
   const surfaceColor = mix(
     color(COLORS.surfaceDark),
     color(COLORS.surfaceLight),
@@ -123,26 +182,26 @@ function createWaterBoxMaterial(waterNormalsTexture, opacity) {
   const sideBase = mix(
     color(COLORS.sideDeep),
     color(COLORS.sideShallow),
-    depthFactor.mul(0.8)
+    depthFactor.mul(SURFACE.depthTintMix)
   )
 
   // コースティクス
   const causticA = mx_noise_float(
     vec3(
-      positionWorld.x.mul(1.5).add(time.mul(0.15)),
-      positionWorld.y.mul(1.3).sub(time.mul(0.12)),
-      positionWorld.z.mul(1.2)
+      positionWorld.x.mul(CAUSTIC.aScaleX).add(time.mul(CAUSTIC.aTimeX)),
+      positionWorld.y.mul(CAUSTIC.aScaleY).sub(time.mul(CAUSTIC.aTimeY)),
+      positionWorld.z.mul(CAUSTIC.aScaleZ)
     )
   ).sin().abs()
   const causticB = mx_noise_float(
     vec3(
-      positionWorld.x.mul(-1.2).add(time.mul(0.1)),
-      positionWorld.y.mul(1.8).add(time.mul(0.14)),
-      positionWorld.z.mul(0.9)
+      positionWorld.x.mul(CAUSTIC.bScaleX).add(time.mul(CAUSTIC.bTimeX)),
+      positionWorld.y.mul(CAUSTIC.bScaleY).add(time.mul(CAUSTIC.bTimeY)),
+      positionWorld.z.mul(CAUSTIC.bScaleZ)
     )
   ).sin().abs()
-  const causticPattern = causticA.mul(causticB).smoothstep(float(0.2), float(0.75))
-  const causticDepthMask = depthFactor.oneMinus().smoothstep(float(0.1), float(0.6))
+  const causticPattern = causticA.mul(causticB).smoothstep(float(CAUSTIC.smoothMin), float(CAUSTIC.smoothMax))
+  const causticDepthMask = depthFactor.oneMinus().smoothstep(float(CAUSTIC.depthMin), float(CAUSTIC.depthMax))
   const causticColor = mix(
     sideBase,
     color(COLORS.caustic),
@@ -151,17 +210,17 @@ function createWaterBoxMaterial(waterNormalsTexture, opacity) {
 
   // 波紋バンド
   const sideNoise = mx_noise_float(
-    positionWorld.mul(vec3(0.35, 0.35, 0.5))
-      .add(vec3(time.mul(0.12), time.mul(-0.08), 0))
+    positionWorld.mul(vec3(SIDE.noiseScale[0], SIDE.noiseScale[1], SIDE.noiseScale[2]))
+      .add(vec3(time.mul(SIDE.noiseTimeX), time.mul(SIDE.noiseTimeY), 0))
   ).mul(0.5)
   const sideBands = positionWorld.y
-    .mul(2.2)
-    .add(positionWorld.z.mul(0.5))
+    .mul(SIDE.bandFreqY)
+    .add(positionWorld.z.mul(SIDE.bandFreqZ))
     .sub(time.mul(EFFECTS.waveSpeed))
     .sin()
     .mul(0.5)
     .add(0.5)
-  const sideRipple = sideNoise.add(sideBands).mul(0.06)
+  const sideRipple = sideNoise.add(sideBands).mul(SIDE.rippleMix)
   const sideColor = mix(causticColor, color(COLORS.ripple), sideRipple)
 
   // 上面と側面を合成
@@ -174,15 +233,15 @@ function createWaterBoxMaterial(waterNormalsTexture, opacity) {
   material.colorNode = mix(material.colorNode, color(COLORS.reflection), reflectivity)
 
   // --- 透過度 ---
-  const topOpacity = mix(float(0.5), float(0.75), fresnel)
-  const sideOpacity = mix(float(0.92), float(0.65), depthFactor)
+  const topOpacity = mix(float(OCEAN_OPACITY.topMin), float(OCEAN_OPACITY.topMax), fresnel)
+  const sideOpacity = mix(float(OCEAN_OPACITY.sideMin), float(OCEAN_OPACITY.sideMax), depthFactor)
   material.opacityNode = mix(sideOpacity, topOpacity, topMask).mul(float(opacity))
 
   // --- 光吸収カラー ---
   material.attenuationColorNode = mix(
     color(COLORS.attenuationDeep),
     color(COLORS.attenuationShallow),
-    depthFactor.mul(0.9)
+    depthFactor.mul(SURFACE.attenuationMix)
   )
 
   return material
@@ -219,7 +278,7 @@ function WaterOceanLayer({
         position={[0, -depth / 2, 0]}
         scale={[width / 2, depth, height / 2]}
       >
-        <boxGeometry args={[2, 1, 2, 1, 1, 1]} />
+        <boxGeometry args={BOX_GEOMETRY_ARGS} />
         <primitive object={material} attach='material' />
       </mesh>
     </group>

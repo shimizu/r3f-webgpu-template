@@ -1,9 +1,24 @@
 import { useLayoutEffect, useMemo, useRef } from 'react'
 import { Color, Matrix4 } from 'three'
 
+const TILE_COLORS = { bright: '#8f8f8f', dark: '#7b7b7b' }
+const TILE_Y_OFFSET = 0.005
+const TILE_HEIGHT = 0.02
+const TILE_MATERIAL = {
+  color: '#8a8a8a',
+  roughness: 0.3,
+  metalness: 0,
+  clearcoat: 0.44,
+  clearcoatRoughness: 0.12,
+  reflectivity: 0.8,
+}
+
+const BASE = { color: '#757575', yOffset: -0.65, padding: 0.8, height: 1.3 }
+const BASE_MATERIAL = { roughness: 0.86, metalness: 0.02 }
+
 function createTileData(columns, rows, tileSize) {
-  const bright = new Color('#8f8f8f')
-  const dark = new Color('#7b7b7b')
+  const bright = new Color(TILE_COLORS.bright)
+  const dark = new Color(TILE_COLORS.dark)
 
   return Array.from({ length: columns * rows }, (_, index) => {
     const column = index % columns
@@ -12,7 +27,7 @@ function createTileData(columns, rows, tileSize) {
     return {
       position: [
         (column - (columns - 1) * 0.5) * tileSize,
-        0.005,
+        TILE_Y_OFFSET,
         (row - (rows - 1) * 0.5) * tileSize,
       ],
       color: (column + row) % 2 === 0 ? bright.clone() : dark.clone(),
@@ -54,9 +69,9 @@ function StageLayer({
 
   return (
     <group position={position}>
-      <mesh receiveShadow position={[0, -0.65, 0]}>
-        <boxGeometry args={[floorWidth + 0.8, 1.3, floorHeight + 0.8]} />
-        <meshStandardMaterial color='#757575' roughness={0.86} metalness={0.02} />
+      <mesh receiveShadow position={[0, BASE.yOffset, 0]}>
+        <boxGeometry args={[floorWidth + BASE.padding, BASE.height, floorHeight + BASE.padding]} />
+        <meshStandardMaterial color={BASE.color} roughness={BASE_MATERIAL.roughness} metalness={BASE_MATERIAL.metalness} />
       </mesh>
 
       <instancedMesh
@@ -64,15 +79,15 @@ function StageLayer({
         args={[null, null, columns * rows]}
         receiveShadow
       >
-        <boxGeometry args={[tileSize, 0.02, tileSize]} />
+        <boxGeometry args={[tileSize, TILE_HEIGHT, tileSize]} />
         <meshPhysicalMaterial
           vertexColors
-          color='#8a8a8a'
-          roughness={0.3}
-          metalness={0}
-          clearcoat={0.44}
-          clearcoatRoughness={0.12}
-          reflectivity={0.8}
+          color={TILE_MATERIAL.color}
+          roughness={TILE_MATERIAL.roughness}
+          metalness={TILE_MATERIAL.metalness}
+          clearcoat={TILE_MATERIAL.clearcoat}
+          clearcoatRoughness={TILE_MATERIAL.clearcoatRoughness}
+          reflectivity={TILE_MATERIAL.reflectivity}
         />
       </instancedMesh>
     </group>
