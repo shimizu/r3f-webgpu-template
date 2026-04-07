@@ -5,6 +5,7 @@ import { BufferGeometry, Color, DoubleSide, Float32BufferAttribute, InstancedMes
 import { MeshBasicNodeMaterial } from 'three/webgpu'
 import { cos, float, instanceIndex, positionLocal, sin, vec3 } from 'three/tsl'
 
+import { useProjection } from '../gis/CoordinateContext'
 import { createInterpolationPass } from '../compute/createInterpolationPass'
 import {
   ENTITY_TYPE,
@@ -26,7 +27,8 @@ function getEntityColor(rawObservationBuffer, index) {
     : new Color(ENTITY_COLORS.default)
 }
 
-function MovingEntitiesLayer({ entityCount, view }) {
+function MovingEntitiesLayer({ entityCount }) {
+  const { view } = useProjection()
   const renderer = useThree((state) => state.gl)
   const systemRef = useRef(null)
   const dataset = useMemo(() => createMockObservationBuffer(entityCount), [entityCount])

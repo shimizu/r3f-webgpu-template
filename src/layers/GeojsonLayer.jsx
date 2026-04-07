@@ -5,8 +5,8 @@ import { LineBasicNodeMaterial, MeshBasicNodeMaterial, PointsNodeMaterial } from
 import { positionLocal } from 'three/tsl'
 import earcut from 'earcut'
 
+import { useProjection } from '../gis/CoordinateContext'
 import { clipAndSplitRings, normalizeLon, normalizeRing, projectLonLatGPU } from '../gis/projectionGPU'
-import { createProjectionUniforms } from '../gis/projectionUniforms'
 
 const DEFAULT_SAMPLE_STEP = 0.2
 const Z_OFFSET = 0.025
@@ -165,7 +165,8 @@ function buildFillGeometry(geojson, view) {
   return geo
 }
 
-function GeojsonLayer({ url, view }) {
+function GeojsonLayer({ url }) {
+  const { view, projUniforms, projectionType } = useProjection()
   const [geojson, setGeojson] = useState(null)
 
   useEffect(() => {
@@ -235,8 +236,7 @@ function GeojsonLayer({ url, view }) {
   // GPU 投影用マテリアル: position 属性の lon/lat を positionNode で投影する
   // centerLon 変更時は view が変わり useMemo([geojson, view]) で geometry が再生成される
   const { fillMaterial, lineMaterial, pointMaterial } = useMemo(() => {
-    const projUniforms = createProjectionUniforms(view)
-    const projectedPos = projectLonLatGPU(positionLocal.x, positionLocal.y, projUniforms, projUniforms.projectionType)
+    const projectedPos = projectLonLatGPU(positionLocal.x, positionLocal.y, projUniforms, projectionType)
 
     const fillMaterial = new MeshBasicNodeMaterial({
       vertexColors: true,
@@ -260,7 +260,7 @@ function GeojsonLayer({ url, view }) {
     pointMaterial.positionNode = projectedPos
 
     return { fillMaterial, lineMaterial, pointMaterial }
-  }, [view])
+  }, [projUniforms, projectionType])
 
   useEffect(() => {
     return () => {

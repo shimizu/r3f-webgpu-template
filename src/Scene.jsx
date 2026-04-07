@@ -9,6 +9,7 @@ import GridLayer from './layers/GridLayer'
 import WaterBlobLayer from './layers/WaterBlobLayer'
 import WaterBoxLayer from './layers/WaterBoxLayer'
 import WaterOceanLayer from './layers/WaterOceanLayer'
+import Coordinate from './gis/CoordinateContext'
 import { WORLD_VIEW } from './gis/views'
 import GeojsonLayer from './layers/GeojsonLayer'
 import MovingEntitiesLayer from './layers/MovingEntitiesLayer'
@@ -100,13 +101,19 @@ function Scene({ entityCount = 2000 }) {
 /*}
 
       {/* GIS: GeoJSON 地図（XY→XZ 回転で床面に配置） */}
-      <group position={[0, -1.249, -10]} rotation={[-Math.PI / 2, 0, -Math.PI ]}>
-       <MovingEntitiesLayer key={entityCount} entityCount={entityCount} view={WORLD_VIEW} /> 
-        <GeojsonLayer url='./data/world.geojson' view={WORLD_VIEW} />
-      </group>
- 
+      <Coordinate projection="equirectangular" view={WORLD_VIEW} position={[0, -1.249, -10]} rotation={[-Math.PI / 2, 0, -Math.PI]}>
+        <GeojsonLayer url='./data/world.geojson' />
+        <MovingEntitiesLayer key={entityCount} entityCount={entityCount} />
+      </Coordinate>
+
+
+
+
+
     </>
   )
 }
 
 export default Scene
+
+
