@@ -65,7 +65,7 @@ function appendSampledSegment(linePositions, pointPositions, previous, current, 
   })
 }
 
-function BaseMapLayer({ url, view }) {
+function GeojsonLayer({ url, view }) {
   const [geojson, setGeojson] = useState(null)
 
   useEffect(() => {
@@ -152,4 +152,4 @@ function BaseMapLayer({ url, view }) {
   )
 }
 
-export default BaseMapLayer
+export default GeojsonLayer

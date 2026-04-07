@@ -358,7 +358,7 @@ function createProjectedNode(lonNode, latNode, worldScaleNode, centerLonNode, ce
 - 等距円筒図法: `x = (lon - centerLon) * cos(centerLat) * scale`, `y = (lat - centerLat) * scale`
 - 日付変更線（±180度）をまたぐデータのために、lambda を `-PI..PI` にラッピングする
 - `cos(centerLat)` は CPU 側で事前計算し uniform で渡す（GPU 上での不必要な再計算を避ける）
-- CPU側の `projectLonLatToWorld()` と GPU側のこの関数は同じ数式を使い、BaseMapLayer と MovingEntitiesLayer の座標系を一致させる
+- CPU側の `projectLonLatToWorld()` と GPU側のこの関数は同じ数式を使い、GeojsonLayer と MovingEntitiesLayer の座標系を一致させる
 
 ---
 

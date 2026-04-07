@@ -1,56 +1,22 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-This repository is a small Vite-based React Three Fiber template. Application code lives in `src/`: `main.jsx` boots React, `App.jsx` owns the canvas shell, `Scene.jsx` contains the 3D scene, and `App.css` holds global styling. Static entry files such as `index.html` and `vite.config.js` sit at the root. Reference notes and migration docs live in `reference/` and should be treated as supporting material, not runtime code.
+`src/` contains the application code. Entry points are `src/main.jsx` and `src/App.jsx`; `src/Scene.jsx` composes the 3D scene. Keep reusable scene pieces in `src/layers/`, postprocessing in `src/effects/`, GPU compute helpers in `src/compute/`, GIS utilities in `src/gis/`, and sample data in `src/data/`. Static assets live under `public/`, including `public/data/` for GeoJSON and `public/dem/` or `public/textures/` for terrain and material inputs. Reference notes and design writeups belong in `docs/`.
 
 ## Build, Test, and Development Commands
-Use npm with the existing lockfile.
-
-- `npm install`: install dependencies from `package-lock.json`.
-- `npm run dev`: start the Vite dev server for local iteration.
-- `npm run build`: create a production bundle in `dist/`.
-- `npm run preview`: serve the built app locally to verify the production output.
-- `npm run lint`: run ESLint across the project.
-
-Run `npm run lint` before opening a PR. For rendering changes, also verify the scene manually in `npm run dev`.
+Use `npm install` to install dependencies from `package-lock.json`. Run `npm run dev` to start the Vite dev server. Run `npm run build` to create a production bundle in `dist/`. Run `npm run preview` to serve the built output locally for a quick production check. There is no dedicated lint script yet; use `npx eslint .` before opening a PR.
 
 ## Coding Style & Naming Conventions
-The codebase uses ES modules, React JSX, and ESLint via [`eslint.config.js`](/home/shimizu/_playground/three-fiber/r3f-webgpu-template/eslint.config.js). Follow the existing style:
-
-- Use 2-space indentation.
-- Prefer single quotes in JS/JSX.
-- Name React components in `PascalCase` (`Scene`, `App`).
-- Use concise camelCase for variables, refs, and helpers.
-- Keep scene-specific logic inside `src/Scene.jsx` or split it into focused components under `src/` as the scene grows.
-
-Avoid unused imports and dead shader code; ESLint will flag common issues.
+This project uses ES modules, React function components, and JSX. Preserve the existing style: no semicolons, single quotes, and straightforward module structure. Name React components and scene layers in PascalCase (`WaterOceanLayer.jsx`), helper modules in camelCase (`createBloom.js`), and colocate related files by feature. Keep Three.js and React Three Fiber props explicit rather than heavily abstracted; this codebase favors readable scene composition over dense helper wrappers.
 
 ## Testing Guidelines
-There is no automated test suite configured yet. Until one is added, treat linting and manual verification as the required quality gate:
-
-- Run `npm run lint`.
-- Check the app in `npm run dev`.
-- Confirm `npm run build` succeeds for dependency or rendering changes.
-
-If you add tests later, place them beside the module under test or in a `src/__tests__/` directory and use `*.test.jsx` naming.
+There is currently no automated test suite. For changes, verify the relevant scene in `npm run dev`, then run `npm run build` to catch bundling errors. If you add tests, keep them near the feature or under a future `tests/` directory, and use filenames ending in `.test.jsx` or `.test.js`.
 
 ## Commit & Pull Request Guidelines
-Recent history uses short, imperative commit subjects such as `update libs`. Keep commits focused and descriptive, for example `add bloom controls` or `refactor scene lighting`.
+Recent history follows short, imperative subjects, often with prefixes such as `feat:`, `fix:`, `refactor:`, or `docs:`. Keep commits focused and scoped to one concern. PRs should include a brief summary, note any asset or data changes, link related issues, and attach screenshots or short recordings for visual scene updates.
 
-PRs should include:
+## Assets & Configuration Tips
+Large DEM, GeoTIFF, and texture assets already live in `public/`; avoid duplicating heavy files unless needed. Prefer referencing assets by stable public paths such as `/data/world.geojson` or `/textures/waternormals.jpg`.
 
-- a short summary of behavior changes,
-- linked issues when applicable,
-- screenshots or a short screen recording for visible scene changes,
-- confirmation that `npm run lint` and `npm run build` passed.
-
-## Agent-Specific Instructions
-Primary contributors are Japanese developers. Write developer-facing responses, reviews, progress updates, and repository guidance in Japanese unless a task explicitly requires another language. Keep code, filenames, commands, and API identifiers unchanged.
-
-### Material Baseline
-Treat the current five material samples in [`src/layers/ExtrudedGridLayer.jsx`](/home/shimizu/_playground/three-fiber/r3f-webgpu-template/src/layers/ExtrudedGridLayer.jsx) as the baseline lookdev library for future requests.
-
-- Left to right, the baseline labels are `Matte`, `Semi Gloss`, `Metal`, `Mirror`, `Glass`.
-- When a user gives relative material direction such as "more matte", "glossier", "more mirror-like", or "make the box feel like the glass ball", interpret that relative to these five presets first.
-- Prefer adjusting from the closest baseline preset instead of inventing a new material from scratch.
-- If a new default material language is established later, update this section and keep the preset order in sync with `ExtrudedGridLayer`.
+## Communication
+Contributors and agents should respond to the repository owner in Japanese. Keep explanations concise, technical, and action-oriented, and use English only when required for code, commands, file paths, or external API names.

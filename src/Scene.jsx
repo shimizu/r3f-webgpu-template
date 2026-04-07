@@ -10,7 +10,7 @@ import WaterBlobLayer from './layers/WaterBlobLayer'
 import WaterBoxLayer from './layers/WaterBoxLayer'
 import WaterOceanLayer from './layers/WaterOceanLayer'
 import { WORLD_VIEW } from './gis/views'
-import BaseMapLayer from './layers/BaseMapLayer'
+import GeojsonLayer from './layers/GeojsonLayer'
 import MovingEntitiesLayer from './layers/MovingEntitiesLayer'
 
 /*
@@ -105,7 +105,7 @@ function Scene({ entityCount = 2000 }) {
 
       {/* GIS: GeoJSON 地図（XY→XZ 回転で床面に配置） */}
       <group position={[0, -1.25, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <BaseMapLayer url='/data/world.geojson' view={WORLD_VIEW} />
+        <GeojsonLayer url='/data/world.geojson' view={WORLD_VIEW} />
       </group>
 
       {/* GPU 移動体パーティクル（billboarding は親の回転を無視するため独立配置） */}

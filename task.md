@@ -199,7 +199,7 @@
 
 追加候補ファイル:
 
-- `src/layers/BaseMapLayer.jsx`
+- `src/layers/GeojsonLayer.jsx`
 - `src/data/mockTokyoBayGeo.json`
 
 完了条件:
