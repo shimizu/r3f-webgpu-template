@@ -5,7 +5,7 @@ import { LineBasicNodeMaterial, MeshBasicNodeMaterial, PointsNodeMaterial } from
 import { positionLocal } from 'three/tsl'
 import earcut from 'earcut'
 
-import { normalizeLon, normalizeRing, projectLonLatGPU } from '../gis/projectionGPU'
+import { clipAndSplitRings, normalizeLon, normalizeRing, projectLonLatGPU } from '../gis/projectionGPU'
 import { createProjectionUniforms } from '../gis/projectionUniforms'
 
 const DEFAULT_SAMPLE_STEP = 0.2
@@ -91,14 +91,11 @@ function appendSampledSegment(linePositions, pointPositions, previous, current, 
   })
 }
 
-function triangulatePolygon(rings, view) {
-  const centerLon = view.centerLon ?? 0
-
-  // earcut は生の lon/lat で実行（トポロジーを保持するため正規化しない）
+function triangulateClippedRings(clippedRings) {
   const flatCoords = []
   const holeIndices = []
 
-  rings.forEach((ring, ringIndex) => {
+  clippedRings.forEach((ring, ringIndex) => {
     if (ringIndex > 0) {
       holeIndices.push(flatCoords.length / 2)
     }
@@ -109,23 +106,28 @@ function triangulatePolygon(rings, view) {
 
   const indices = earcut(flatCoords, holeIndices.length > 0 ? holeIndices : null, 2)
 
-  // 三角形ごとに頂点を normalizeLon で正規化し、
-  // GPU の wrappedLambda と同じ範囲で経度幅を判定
   const positions = []
-  for (let i = 0; i < indices.length; i += 3) {
-    const nlon0 = normalizeLon(flatCoords[indices[i] * 2], centerLon)
-    const nlon1 = normalizeLon(flatCoords[indices[i + 1] * 2], centerLon)
-    const nlon2 = normalizeLon(flatCoords[indices[i + 2] * 2], centerLon)
-    const lonSpan = Math.max(nlon0, nlon1, nlon2) - Math.min(nlon0, nlon1, nlon2)
-
-    // 反経線をまたぐ三角形をスキップ
-    if (lonSpan > 180) continue
-
-    const lat0 = flatCoords[indices[i] * 2 + 1]
-    const lat1 = flatCoords[indices[i + 1] * 2 + 1]
-    const lat2 = flatCoords[indices[i + 2] * 2 + 1]
-    positions.push(nlon0, lat0, 0, nlon1, lat1, 0, nlon2, lat2, 0)
+  for (let i = 0; i < indices.length; i += 1) {
+    const idx = indices[i]
+    positions.push(flatCoords[idx * 2], flatCoords[idx * 2 + 1], 0)
   }
+  return positions
+}
+
+function triangulatePolygon(rings, view) {
+  const centerLon = view.centerLon ?? 0
+
+  // 1. normalizeRing でリングを連続化
+  const normalizedRings = rings.map((ring) => normalizeRing(ring, centerLon))
+
+  // 2. [centerLon-180, centerLon+180] でクリップし、はみ出し部分をシフト
+  const polygonGroups = clipAndSplitRings(normalizedRings, centerLon)
+
+  // 3. 各クリップ結果を三角形分割
+  const positions = []
+  polygonGroups.forEach((clippedRings) => {
+    positions.push(...triangulateClippedRings(clippedRings))
+  })
 
   return positions
 }
