@@ -5,7 +5,7 @@ import { LineBasicNodeMaterial, MeshBasicNodeMaterial, PointsNodeMaterial } from
 import { positionLocal } from 'three/tsl'
 import earcut from 'earcut'
 
-import { normalizeLon, projectLonLatGPU } from '../gis/projectionGPU'
+import { normalizeLon, normalizeRing, projectLonLatGPU } from '../gis/projectionGPU'
 import { createProjectionUniforms } from '../gis/projectionUniforms'
 
 const DEFAULT_SAMPLE_STEP = 0.2
@@ -52,9 +52,15 @@ function collectCoordinates(geometry, collector) {
 }
 
 function appendSampledSegment(linePositions, pointPositions, previous, current, view) {
-  const lonDelta = current[0] - previous[0]
-  const latDelta = current[1] - previous[1]
   const centerLon = view.centerLon ?? 0
+  const prevLon = normalizeLon(previous[0], centerLon)
+  const currLon = normalizeLon(current[0], centerLon)
+
+  // 正規化後に経度差が大きいセグメントは反経線またぎなのでスキップ
+  if (Math.abs(currLon - prevLon) > 180) return
+
+  const lonDelta = currLon - prevLon
+  const latDelta = current[1] - previous[1]
   const steps = Math.max(
     1,
     Math.ceil(
@@ -68,7 +74,7 @@ function appendSampledSegment(linePositions, pointPositions, previous, current, 
 
   for (let step = 0; step <= steps; step += 1) {
     const t = step / steps
-    const lon = normalizeLon(previous[0] + lonDelta * t, centerLon)
+    const lon = prevLon + lonDelta * t
     const lat = previous[1] + latDelta * t
     sampledPoints.push([lon, lat])
   }
@@ -88,10 +94,7 @@ function appendSampledSegment(linePositions, pointPositions, previous, current, 
 function triangulatePolygon(rings, view) {
   const centerLon = view.centerLon ?? 0
 
-  // centerLon 基準で lon を正規化し、earcut と GPU 投影の折り返しを一致させる
-  const normalizedRings = rings.map((ring) =>
-    ring.map((coord) => [normalizeLon(coord[0], centerLon), coord[1]])
-  )
+  const normalizedRings = rings.map((ring) => normalizeRing(ring, centerLon))
 
   const flatCoords = []
   const holeIndices = []
@@ -263,7 +266,7 @@ function GeojsonLayer({ url, view }) {
 
   return (
     <group position={[0, 0, Z_OFFSET]}>
-      <mesh geometry={fillGeometry} material={fillMaterial} />
+      {/* <mesh geometry={fillGeometry} material={fillMaterial} /> */}
       <lineSegments geometry={lineGeometry} material={lineMaterial} />
       <points geometry={pointGeometry} material={pointMaterial} />
     </group>

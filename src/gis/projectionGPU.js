@@ -20,6 +20,29 @@ export function normalizeLon(lon, centerLon) {
 }
 
 /**
+ * 座標リングの lon を連続的に正規化する。
+ * 最初の頂点を centerLon 基準で正規化し、後続は前の頂点との差が ±180 以内になるよう調整。
+ */
+export function normalizeRing(ring, centerLon) {
+  if (ring.length === 0) return ring
+
+  const result = new Array(ring.length)
+  let prevLon = normalizeLon(ring[0][0], centerLon)
+  result[0] = [prevLon, ring[0][1]]
+
+  for (let i = 1; i < ring.length; i += 1) {
+    let delta = ring[i][0] - prevLon
+    while (delta > 180) delta -= 360
+    while (delta < -180) delta += 360
+    const lon = prevLon + delta
+    result[i] = [lon, ring[i][1]]
+    prevLon = lon
+  }
+
+  return result
+}
+
+/**
  * lon/lat の TSL ノードを受け取り、投影済みワールド座標の vec3 ノードを返す。
  * プロジェクト唯一の投影関数。
  *
