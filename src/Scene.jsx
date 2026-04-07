@@ -2,51 +2,45 @@ import { useState } from 'react'
 import { MapControls } from '@react-three/drei'
 
 import LightingRig from './LightingRig'
+// eslint-disable-next-line no-unused-vars
 import SceneEffects from './effects/SceneEffects'
+// eslint-disable-next-line no-unused-vars
 import MaterialSamplesLayer from './layers/MaterialSamplesLayer'
 import SkyLayer from './layers/SkyLayer'
+// eslint-disable-next-line no-unused-vars
 import GridLayer from './layers/GridLayer'
+// eslint-disable-next-line no-unused-vars
 import WaterBlobLayer from './layers/WaterBlobLayer'
+// eslint-disable-next-line no-unused-vars
 import WaterBoxLayer from './layers/WaterBoxLayer'
+// eslint-disable-next-line no-unused-vars
 import WaterOceanLayer from './layers/WaterOceanLayer'
 import Coordinate from './gis/CoordinateContext'
 import { WORLD_VIEW } from './gis/views'
 import GeojsonLayer from './layers/GeojsonLayer'
 import MovingEntitiesLayer from './layers/MovingEntitiesLayer'
 
-/*
-  このファイルの処理の流れ
-
-  1. Scene が 3D シーン全体の見た目を組み立てる
-     背景色、ライト、カメラ操作、各レイヤーを
-     1 つの React コンポーネントとして並べている。
-
-  2. MapControls がカメラ操作を担当する
-     左ドラッグで平行移動、右ドラッグで回転、ホイールでズームできるようにして、
-     地図を観察しやすい操作感を用意している。
-
-  3. 各レイヤーがジオラマ舞台を描画する
-     SkyLayer: Preetham モデルによる大気散乱の空
-     StageLayer: 工作マット風 floor
-     MaterialSamplesLayer: マテリアルサンプル球体5種
-     WaterBoxLayer: TSL 水面シミュレーション
-
-  つまり Scene.jsx は、
-  「シーンの見た目と操作を定義する」
-  「全レイヤーを直接合成する」
-  という画面構成の入口になっている。
-*/
+/**
+ * シーン全体の構成を定義するコンポーネント。
+ * 
+ * 処理の流れ:
+ * 1. 背景（空）、照明（ライトリグ）、カメラ操作（MapControls）を配置。
+ * 2. GIS コンテキスト（Coordinate）を構築し、地理座標系を 3D 空間に投影。
+ * 3. 投影された空間内に地図（GeoJSON）や移動体（MovingEntities）を描画。
+ */
 function Scene({ entityCount = 2000 }) {
+  // eslint-disable-next-line no-unused-vars
   const [heightInfo, setHeightInfo] = useState(null)
+  
   return (
     <>
-      {/* 雨天フォグ: 一時無効化
-      <fog attach="fog" args={['#6a7580', 20, 60]} />
-      */}
-
+      {/* 太陽光や環境光を一括管理するリグ */}
       <LightingRig />
+      
+      {/* Preetham モデルによる動的な空の描画 */}
       <SkyLayer />
 
+      {/* 地図閲覧に適したカメラ操作（左ドラッグで移動、右ドラッグで回転） */}
       <MapControls
         enableDamping
         minDistance={6}
@@ -54,66 +48,25 @@ function Scene({ entityCount = 2000 }) {
         target={[0, 0, 0]}
       />
 
- 
-
-{/*
-      <GridLayer position={[0, -1.25, 0]} />
-
-      <MaterialSamplesLayer />
-
-
-        //ブルーム確認用: 高 emissive の光る球体 
-        <mesh position={[0, 5, 0]}>
-          <sphereGeometry args={[1, 32, 32]} />
-          <meshStandardMaterial
-            color='#ff6600'
-            emissive='#ff6600'
-            emissiveIntensity={5}
-          />
-        </mesh>
-
-        //ポストプロセッシング: Bloom + Godrays 
-        <SceneEffects />
-
-        <group position={[0, 0, 10]} rotation={[0, 0, 0]}>
-          <WaterBoxLayer
-            width={5}
-            height={5}
-            depth={2}
-            position={[-10, 0, 0]}
-          />
-          <WaterBlobLayer
-            width={5}
-            height={5}
-            depth={4}
-            position={[0, 0, 0]}
-          />
-
-          <WaterOceanLayer
-            width={5}
-            height={5}
-            depth={2}
-            position={[10, 0, 0]}
-          />
-
-          </group>
-
-/*}
-
-      {/* GIS: GeoJSON 地図（XY→XZ 回転で床面に配置） */}
-      <Coordinate projection="equirectangular" view={WORLD_VIEW} position={[0, -1.249, -10]} rotation={[-Math.PI / 2, 0, -Math.PI]}>
+      {/* 
+          GIS コンテキスト:
+          地理座標（lon/lat）を 3D 空間（x/y/z）へ投影する設定を提供します。
+          ここでは等距円筒図法を使用し、XZ 平面に配置されるよう回転させています。
+      */}
+      <Coordinate 
+        projection="equirectangular" 
+        view={WORLD_VIEW} 
+        position={[0, -1.249, -10]} 
+        rotation={[-Math.PI / 2, 0, -Math.PI]}
+      >
+        {/* 世界地図のベクトルデータレイヤー */}
         <GeojsonLayer url='./data/world.geojson' />
+        
+        {/* リアルタイム補間を用いた移動体のパーティクルレイヤー */}
         <MovingEntitiesLayer key={entityCount} entityCount={entityCount} />
       </Coordinate>
-
-
-
-
-
     </>
   )
 }
 
 export default Scene
-
-

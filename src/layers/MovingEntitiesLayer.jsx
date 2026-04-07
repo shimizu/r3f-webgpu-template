@@ -14,11 +14,15 @@ import {
 } from '../compute/observationLayout'
 import { createMockObservationBuffer } from '../data/mockObservations'
 
+// 定数定義: エンティティのサイズやアニメーション周期
 const ENTITY_SIZE = 0.017
 const LOOP_DURATION = 6
 const ENTITY_COLORS = { aircraft: '#ffd166', default: '#66d9ff' }
 const ENTITY_MATERIAL = { color: '#ffffff' }
 
+/**
+ * 観測データ（バッファ）からエンティティのタイプに応じた色を取得します。
+ */
 function getEntityColor(rawObservationBuffer, index) {
   const type = rawObservationBuffer[index * OBSERVATION_STRIDE + OBSERVATION_OFFSET.type]
 
@@ -27,19 +31,33 @@ function getEntityColor(rawObservationBuffer, index) {
     : new Color(ENTITY_COLORS.default)
 }
 
+/**
+ * 大量の移動体を GPU で補間・投影して描画するレイヤー。
+ * 
+ * 仕組み:
+ * 1. 観測データ（前回位置、現在位置、時刻）を GPU バッファ（StorageBuffer）に転送。
+ * 2. Compute Shader (TSL) が現在の再生時刻に基づき、2点間を線形補間。
+ * 3. 補間された地理座標（lon/lat）をそのまま GPU 上でワールド座標へ投影。
+ * 4. InstancedMesh を使用し、頂点シェーダー内で各インスタンスの位置を更新して描画。
+ */
 function MovingEntitiesLayer({ entityCount }) {
   const { view } = useProjection()
   const renderer = useThree((state) => state.gl)
   const systemRef = useRef(null)
+  
+  // モックデータの生成
   const dataset = useMemo(() => createMockObservationBuffer(entityCount), [entityCount])
 
+  // GPU リソースとマテリアルの初期化
   const { resourceError, resources } = useMemo(() => {
     try {
+      // 補間・投影を行う Compute Pass の作成
       const system = createInterpolationPass(dataset.rawObservationBuffer, {
         ...view,
         loopDuration: LOOP_DURATION,
       })
-      // 進行方向を示す三角形（XY 平面、+Y が前方。親 group で XZ に回転される）
+
+      // 個々のエンティティの形状（三角形）
       const s = ENTITY_SIZE
       const geometry = new BufferGeometry()
       geometry.setAttribute('position', new Float32BufferAttribute([
@@ -47,28 +65,32 @@ function MovingEntitiesLayer({ entityCount }) {
         -s * 0.5, -s * 0.5, 0, // 左後方
         s * 0.5, -s * 0.5, 0,  // 右後方
       ], 3))
+
       const material = new MeshBasicNodeMaterial({
         color: ENTITY_MATERIAL.color,
         transparent: true,
         depthWrite: false,
         side: DoubleSide,
       })
+
+      // インスタンス描画用のメッシュ
       const mesh = new InstancedMesh(geometry, material, system.entityCount)
       const identityMatrix = new Matrix4()
 
+      // 各インスタンスの初期色を設定
       for (let index = 0; index < system.entityCount; index += 1) {
         mesh.setMatrixAt(index, identityMatrix)
         mesh.setColorAt(index, getEntityColor(dataset.rawObservationBuffer, index))
       }
 
-      // compute shader は XY 平面 vec3(x, y, 0) で出力する。
-      // XY→XZ 変換は親 group の rotation に任せ、ここでは XY 平面のまま配置する。
+      // --- TSL による頂点制御 ---
+      // Compute Shader で計算された位置と進行方向を取得
       const rawPos = system.positionNode.element(instanceIndex)
       const heading = system.headingNode.element(instanceIndex)
       const cosH = cos(heading)
       const sinH = sin(heading)
 
-      // ローカル頂点を heading で回転（XY 平面上）
+      // 頂点シェーダー内で、各インスタンスを進行方向（heading）へ回転させ、投影位置（rawPos）へ配置
       const lx = positionLocal.x
       const ly = positionLocal.y
       const rotatedX = lx.mul(cosH).sub(ly.mul(sinH))
@@ -79,7 +101,7 @@ function MovingEntitiesLayer({ entityCount }) {
         rotatedY.add(rawPos.y),
         float(0)
       )
-      mesh.frustumCulled = false
+      mesh.frustumCulled = false // 常に描画
 
       return {
         resourceError: null,
@@ -96,10 +118,9 @@ function MovingEntitiesLayer({ entityCount }) {
     }
   }, [dataset, view])
 
+  // レンダラーへの Compute Pass 登録とクリーンアップ
   useEffect(() => {
-    if (!resources) {
-      return undefined
-    }
+    if (!resources) return undefined
 
     try {
       resources.system.init(renderer)
@@ -120,14 +141,15 @@ function MovingEntitiesLayer({ entityCount }) {
     }
   }, [renderer, resources])
 
+  // 毎フレームの更新処理
   useFrame((state) => {
     const system = systemRef.current
+    if (!system) return
 
-    if (!system) {
-      return
-    }
-
+    // ループ再生時刻の計算
     const playbackTime = state.clock.elapsedTime % LOOP_DURATION
+    
+    // GPU 側で補間と投影を再計算
     system.update(renderer, playbackTime, {
       ...view,
       loopDuration: LOOP_DURATION,

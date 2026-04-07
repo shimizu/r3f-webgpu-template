@@ -5,9 +5,8 @@ const PI = Math.PI
 const TAU = Math.PI * 2
 
 /**
- * lon を centerLon 基準で [-180, +180] の範囲に正規化する。
- * earcut 前処理用。GPU 側の wrappedLambda と同じ折り返し規約。
- *
+ * 経度を centerLon 基準で [-180, +180] の範囲に正規化します。
+ * 
  * @param {number} lon - 経度（度数法）
  * @param {number} centerLon - 中心経度（度数法）
  * @returns {number} 正規化された経度
@@ -20,8 +19,8 @@ export function normalizeLon(lon, centerLon) {
 }
 
 /**
- * 座標リングの lon を連続的に正規化する。
- * 最初の頂点を centerLon 基準で正規化し、後続は前の頂点との差が ±180 以内になるよう調整。
+ * 座標リングの経度を連続的に正規化します。
+ * 前の頂点との差が ±180 以内になるよう調整し、日付変更線での断裂を防ぎます。
  */
 export function normalizeRing(ring, centerLon) {
   if (ring.length === 0) return ring
@@ -43,8 +42,7 @@ export function normalizeRing(ring, centerLon) {
 }
 
 /**
- * リングを垂直線 (lon = boundary) でクリップする (Sutherland-Hodgman)。
- * side='left' は boundary 以上を残す、side='right' は boundary 以下を残す。
+ * リングを指定した垂直境界線 (lon = boundary) でクリップします (Sutherland-Hodgman アルゴリズム)。
  */
 function clipRingAgainstBoundary(ring, boundary, side) {
   if (ring.length === 0) return ring
@@ -69,9 +67,8 @@ function clipRingAgainstBoundary(ring, boundary, side) {
 }
 
 /**
- * normalizeRing 済みのリング群を [minLon, maxLon] でクリップする。
- * はみ出した部分は ±360 シフトして反対側にも追加する。
- * 戻り値は earcut に渡せるリング群の配列（複数ポリゴンになりうる）。
+ * 連続化されたリングを [minLon, maxLon] の範囲でクリップし、はみ出し部分を逆側に複製します。
+ * これにより、地図を回転させた際に日付変更線をまたいでポリゴンが表示されます。
  */
 export function clipAndSplitRings(normalizedRings, centerLon) {
   const minLon = centerLon - 180
@@ -84,7 +81,7 @@ export function clipAndSplitRings(normalizedRings, centerLon) {
     return clipped
   }).filter((ring) => ring.length >= 3)
 
-  // はみ出し部分: +360 シフトして [minLon, maxLon] にクリップ（左端に出現）
+  // 左へはみ出した部分を +360 シフトしてメイン領域内（右端）に表示
   const shiftedLeftRings = normalizedRings.map((ring) => {
     const shifted = ring.map((p) => [p[0] - 360, p[1]])
     let clipped = clipRingAgainstBoundary(shifted, minLon, 'left')
@@ -92,7 +89,7 @@ export function clipAndSplitRings(normalizedRings, centerLon) {
     return clipped
   }).filter((ring) => ring.length >= 3)
 
-  // はみ出し部分: -360 シフトして [minLon, maxLon] にクリップ（右端に出現）
+  // 右へはみ出した部分を -360 シフトしてメイン領域内（左端）に表示
   const shiftedRightRings = normalizedRings.map((ring) => {
     const shifted = ring.map((p) => [p[0] + 360, p[1]])
     let clipped = clipRingAgainstBoundary(shifted, minLon, 'left')
@@ -108,8 +105,12 @@ export function clipAndSplitRings(normalizedRings, centerLon) {
 }
 
 // ============================================================
-// 共通: 経度の日付変更線ラッピングと緯度のラジアン変換
+// TSL (GPU) 側での地理計算
 // ============================================================
+
+/**
+ * GPU 側で経度をラッピングし、緯度とともにラジアンへ変換します。
+ */
 function wrapLambdaAndPhi(lonNode, latNode, uniforms) {
   const { centerLonNode, centerLatNode } = uniforms
 
@@ -126,11 +127,10 @@ function wrapLambdaAndPhi(lonNode, latNode, uniforms) {
   return { wrappedLambda, phi }
 }
 
-// ============================================================
-// 図法ごとの投影関数
-// ============================================================
-
-/** 等距円筒図法: x = λ·cos(centerLat)·s, y = φ·s */
+/** 
+ * 等距円筒図法 (Equirectangular)
+ * x = λ · cos(φ_0) · scale, y = φ · scale
+ */
 function equirectangularProjection(wrappedLambda, phi, uniforms) {
   const { worldScaleNode, cosCenterLatNode } = uniforms
   return vec3(
@@ -140,7 +140,10 @@ function equirectangularProjection(wrappedLambda, phi, uniforms) {
   )
 }
 
-/** メルカトル図法: x = λ·s, y = ln(tan(π/4 + φ/2))·s */
+/** 
+ * メルカトル図法 (Mercator)
+ * x = λ · scale, y = ln(tan(π/4 + φ/2)) · scale
+ */
 function mercatorProjection(wrappedLambda, phi, uniforms) {
   const { worldScaleNode, centerLatNode } = uniforms
   const centerLatRad = centerLatNode.mul(DEG2RAD)
@@ -153,7 +156,10 @@ function mercatorProjection(wrappedLambda, phi, uniforms) {
   )
 }
 
-/** ランベルト正積円筒図法: x = λ·cos(centerLat)·s, y = sin(φ)·s */
+/** 
+ * ランベルト正積円筒図法 (Lambert Cylindrical)
+ * x = λ · cos(φ_0) · scale, y = sin(φ) · scale
+ */
 function lambertCylindricalProjection(wrappedLambda, phi, uniforms) {
   const { worldScaleNode, cosCenterLatNode, centerLatNode } = uniforms
   const centerLatRad = centerLatNode.mul(DEG2RAD)
@@ -165,7 +171,10 @@ function lambertCylindricalProjection(wrappedLambda, phi, uniforms) {
   )
 }
 
-/** Natural Earth I 図法: 多項式ベースの疑似円筒図法 (d3-geo-projection 準拠) */
+/** 
+ * Natural Earth I 図法
+ * 多項式ベースの疑似円筒図法。d3-geo-projection の実装に準拠。
+ */
 function naturalEarthProjection(wrappedLambda, phi, uniforms) {
   const { worldScaleNode } = uniforms
   const phi2 = phi.mul(phi)
@@ -174,7 +183,7 @@ function naturalEarthProjection(wrappedLambda, phi, uniforms) {
   const phi8 = phi4.mul(phi4)
   const phi12 = phi6.mul(phi6)
 
-  // x = λ * (0.84719 - 0.13063·φ² + φ¹²·(-0.04515 + 0.05494·φ² - 0.02326·φ⁴ + 0.00331·φ⁶))
+  // 多項式近似による X 座標計算
   const xScale = float(0.84719)
     .sub(phi2.mul(0.13063))
     .add(phi12.mul(
@@ -182,7 +191,7 @@ function naturalEarthProjection(wrappedLambda, phi, uniforms) {
     ))
   const x = wrappedLambda.mul(xScale)
 
-  // y = φ * (1.01183 + φ⁸·(-0.02625 + 0.01926·φ² - 0.00396·φ⁴))
+  // 多項式近似による Y 座標計算
   const yScale = float(1.01183)
     .add(phi8.mul(
       float(-0.02625).add(phi2.mul(0.01926)).sub(phi4.mul(0.00396))
@@ -196,9 +205,6 @@ function naturalEarthProjection(wrappedLambda, phi, uniforms) {
   )
 }
 
-// ============================================================
-// 図法レジストリ
-// ============================================================
 const PROJECTIONS = {
   equirectangular: equirectangularProjection,
   mercator: mercatorProjection,
@@ -207,14 +213,14 @@ const PROJECTIONS = {
 }
 
 /**
- * lon/lat の TSL ノードを受け取り、投影済みワールド座標の vec3 ノードを返す。
- * projectionType で図法を切り替え可能。
+ * 経度/緯度（lon/lat）の TSL ノードを受け取り、投影済みワールド座標の vec3 ノードを返します。
+ * CPU 側（Geometry 生成時）と GPU 側（Shader 実行時）の両方で同じ計算式を共有するために設計されています。
  *
  * @param {Node} lonNode - 経度（度数法）の TSL ノード
  * @param {Node} latNode - 緯度（度数法）の TSL ノード
- * @param {Object} uniforms - { centerLonNode, centerLatNode, worldScaleNode, cosCenterLatNode }
- * @param {string} [projectionType='equirectangular'] - 図法名
- * @returns {Node} vec3(worldX, worldY, 0)
+ * @param {Object} uniforms - 投影に使用する各種 Uniform（中心座標、スケールなど）
+ * @param {string} [projectionType='equirectangular'] - 使用する図法名
+ * @returns {Node} 投影後の位置（vec3）
  */
 export function projectLonLatGPU(lonNode, latNode, uniforms, projectionType = 'equirectangular') {
   const { wrappedLambda, phi } = wrapLambdaAndPhi(lonNode, latNode, uniforms)
