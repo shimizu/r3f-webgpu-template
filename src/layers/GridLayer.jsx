@@ -7,6 +7,7 @@ import {
   color,
   float,
   fract,
+  fwidth,
   max,
   min,
   mix,
@@ -26,8 +27,7 @@ const GRID_DEFAULTS = {
   baseColor: '#3f73d3',   // 工作シートの緑
   lineColor: '#ffffff',   // グリッド線の色
   lineOpacity: 0.3,       // メインラインの不透明度
-  subLineOpacity: 0.15,   // サブラインの不透明度
-  smoothstepEdge: 0.01,  // smoothstep のアンチエイリアス幅
+  subLineOpacity: 0.05,   // サブラインの不透明度
   roughness: 0.95,
   metalness: 0,
 }
@@ -53,20 +53,28 @@ function createGridMaterial(options = {}) {
   const wx = positionWorld.x
   const wz = positionWorld.z
 
-  // サブグリッド: fract → 中心からの距離 → smoothstep で線
-  const subFracX = abs(fract(wx.div(subGridScale)).sub(0.5))
-  const subFracZ = abs(fract(wz.div(subGridScale)).sub(0.5))
+  // サブグリッド: fract → 中心からの距離 → fwidth ベースの smoothstep で線
+  const subUvX = wx.div(subGridScale)
+  const subUvZ = wz.div(subGridScale)
+  const subFracX = abs(fract(subUvX).sub(0.5))
+  const subFracZ = abs(fract(subUvZ).sub(0.5))
   const subHalfWidth = float(subLineWidth / subGridScale / 2)
-  const subLineX = smoothstep(subHalfWidth.add(GRID_DEFAULTS.smoothstepEdge), subHalfWidth, subFracX)
-  const subLineZ = smoothstep(subHalfWidth.add(GRID_DEFAULTS.smoothstepEdge), subHalfWidth, subFracZ)
+  const subEdgeX = fwidth(subUvX)
+  const subEdgeZ = fwidth(subUvZ)
+  const subLineX = smoothstep(subHalfWidth.add(subEdgeX), subHalfWidth, subFracX)
+  const subLineZ = smoothstep(subHalfWidth.add(subEdgeZ), subHalfWidth, subFracZ)
   const subLine = max(subLineX, subLineZ).mul(subLineOpacity)
 
-  // メイングリッド: 同様のパターン
-  const mainFracX = abs(fract(wx.div(gridScale)).sub(0.5))
-  const mainFracZ = abs(fract(wz.div(gridScale)).sub(0.5))
+  // メイングリッド: 同様のパターン（fwidth ベース）
+  const mainUvX = wx.div(gridScale)
+  const mainUvZ = wz.div(gridScale)
+  const mainFracX = abs(fract(mainUvX).sub(0.5))
+  const mainFracZ = abs(fract(mainUvZ).sub(0.5))
   const mainHalfWidth = float(lineWidth / gridScale / 2)
-  const mainLineX = smoothstep(mainHalfWidth.add(GRID_DEFAULTS.smoothstepEdge), mainHalfWidth, mainFracX)
-  const mainLineZ = smoothstep(mainHalfWidth.add(GRID_DEFAULTS.smoothstepEdge), mainHalfWidth, mainFracZ)
+  const mainEdgeX = fwidth(mainUvX)
+  const mainEdgeZ = fwidth(mainUvZ)
+  const mainLineX = smoothstep(mainHalfWidth.add(mainEdgeX), mainHalfWidth, mainFracX)
+  const mainLineZ = smoothstep(mainHalfWidth.add(mainEdgeZ), mainHalfWidth, mainFracZ)
   const mainLine = max(mainLineX, mainLineZ).mul(lineOpacity)
 
   // 合成: サブとメインの強い方を採用
