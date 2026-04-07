@@ -16,27 +16,16 @@ export function createMockObservationBuffer(entityCount) {
   for (let index = 0; index < entityCount; index += 1) {
     const baseIndex = index * OBSERVATION_STRIDE
     const isAircraft = index % 9 === 0
-    const lonBase = -180 + hash01(index * 0.37 + 7.9) * 360
+    // テスト用: 全エンティティが lon 180 → -180 に西進する
     const latBase = -90 + hash01(index * 0.17 + 2.1) * 180
-    const speedMultiplier = 1 + hash01(index * 0.29 + 3.4) * 3
-    const lonDelta =
-      (hash01(index * 0.61 + 1.4) - 0.5) *
-      (isAircraft ? 1.8 : 0.6) *
-      speedMultiplier
-    const latDelta =
-      (hash01(index * 0.49 + 9.2) - 0.5) *
-      (isAircraft ? 0.9 : 0.3) *
-      speedMultiplier
-    const prevLon = Math.max(-180, Math.min(180, lonBase - lonDelta))
-    const prevLat = Math.max(-90, Math.min(90, latBase - latDelta))
-    const lon = Math.max(-180, Math.min(180, lonBase + lonDelta))
-    const lat = Math.max(-90, Math.min(90, latBase + latDelta))
+    const prevLon = 180
+    const lon = -180
+    const prevLat = latBase
+    const lat = latBase
     const alt = isAircraft ? 2800 + hash01(index * 0.43 + 4.2) * 9000 : 0
     const prevAlt = isAircraft ? alt - 180 : 0
-    const speed =
-      (isAircraft ? 210 + hash01(index * 0.83 + 4.7) * 90 : 9 + hash01(index * 0.71 + 5.4) * 14) *
-      speedMultiplier
-    const heading = isAircraft ? 55 + hash01(index * 0.93 + 8.2) * 40 : 25 + hash01(index * 1.13 + 6.8) * 30
+    const speed = isAircraft ? 250 : 15
+    const heading = 270  // 西向き
 
     rawObservationBuffer[baseIndex + OBSERVATION_OFFSET.lon] = lon
     rawObservationBuffer[baseIndex + OBSERVATION_OFFSET.lat] = lat
