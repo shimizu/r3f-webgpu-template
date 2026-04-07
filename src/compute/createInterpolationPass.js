@@ -91,6 +91,10 @@ export function createInterpolationPass(rawObservationBuffer, options = {}) {
     new Float32Array(entityCount * 3),
     3
   )
+  const headingAttribute = new StorageBufferAttribute(
+    new Float32Array(entityCount),
+    1
+  )
 
   const rawObservationNode = storage(
     rawObservationAttribute,
@@ -100,6 +104,11 @@ export function createInterpolationPass(rawObservationBuffer, options = {}) {
   const projectedPositionNode = storage(
     projectedPositionAttribute,
     'vec3',
+    entityCount
+  )
+  const headingNode = storage(
+    headingAttribute,
+    'float',
     entityCount
   )
 
@@ -160,12 +169,21 @@ export function createInterpolationPass(rawObservationBuffer, options = {}) {
     ).toVar()
 
     projectedPosition.assign(projected)
+
+    // heading をバッファから読み取って出力する（度→ラジアン変換）
+    const headingOut = headingNode.element(instanceIndex)
+    const headingDeg = rawObservationNode
+      .element(baseIndex.add(int(OBSERVATION_OFFSET.heading)))
+      .toVar()
+    headingOut.assign(headingDeg.mul(DEG2RAD))
   })().compute(entityCount, [WORKGROUP_SIZE])
 
   return {
     entityCount,
     positionAttribute: projectedPositionAttribute,
     positionNode: projectedPositionNode,
+    headingAttribute,
+    headingNode,
 
     init(renderer) {
       // 初回描画前に 1 回計算して、position バッファを空のまま使わないようにする。

@@ -1,9 +1,9 @@
 /* eslint-disable react/no-unknown-property, react/prop-types */
 import { useEffect, useMemo, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
-import { Color, DoubleSide, InstancedMesh, Matrix4, PlaneGeometry } from 'three'
+import { BufferGeometry, Color, DoubleSide, Float32BufferAttribute, InstancedMesh, Matrix4 } from 'three'
 import { MeshBasicNodeMaterial } from 'three/webgpu'
-import { billboarding, float, instanceIndex, shapeCircle, vec3 } from 'three/tsl'
+import { cos, float, instanceIndex, positionLocal, sin, vec3 } from 'three/tsl'
 
 import { createInterpolationPass } from '../compute/createInterpolationPass'
 import {
@@ -16,7 +16,7 @@ import { createMockObservationBuffer } from '../data/mockObservations'
 const ENTITY_SIZE = 0.017
 const LOOP_DURATION = 6
 const ENTITY_COLORS = { aircraft: '#ffd166', default: '#66d9ff' }
-const ENTITY_MATERIAL = { color: '#ffffff', alphaTest: 0.5 }
+const ENTITY_MATERIAL = { color: '#ffffff' }
 
 function getEntityColor(rawObservationBuffer, index) {
   const type = rawObservationBuffer[index * OBSERVATION_STRIDE + OBSERVATION_OFFSET.type]
@@ -37,7 +37,14 @@ function MovingEntitiesLayer({ entityCount, view }) {
         ...view,
         loopDuration: LOOP_DURATION,
       })
-      const geometry = new PlaneGeometry(ENTITY_SIZE, ENTITY_SIZE, 1, 1)
+      // 進行方向を示す三角形（XY 平面、+Y が前方。親 group で XZ に回転される）
+      const s = ENTITY_SIZE
+      const geometry = new BufferGeometry()
+      geometry.setAttribute('position', new Float32BufferAttribute([
+        0, s, 0,               // 先端
+        -s * 0.5, -s * 0.5, 0, // 左後方
+        s * 0.5, -s * 0.5, 0,  // 右後方
+      ], 3))
       const material = new MeshBasicNodeMaterial({
         color: ENTITY_MATERIAL.color,
         transparent: true,
@@ -52,17 +59,24 @@ function MovingEntitiesLayer({ entityCount, view }) {
         mesh.setColorAt(index, getEntityColor(dataset.rawObservationBuffer, index))
       }
 
-      // compute shader は XY 平面 vec3(x, y, 0) で出力するが、
-      // シーンは Y-up なので XZ 平面に変換する（billboarding は親 group の回転を無視するため）
+      // compute shader は XY 平面 vec3(x, y, 0) で出力する。
+      // XY→XZ 変換は親 group の rotation に任せ、ここでは XY 平面のまま配置する。
       const rawPos = system.positionNode.element(instanceIndex)
-      const xzPos = vec3(rawPos.x, float(0), rawPos.y.negate())
-      material.vertexNode = billboarding({
-        position: xzPos,
-        horizontal: true,
-        vertical: true,
-      })
-      material.opacityNode = shapeCircle()
-      material.alphaTest = ENTITY_MATERIAL.alphaTest
+      const heading = system.headingNode.element(instanceIndex)
+      const cosH = cos(heading)
+      const sinH = sin(heading)
+
+      // ローカル頂点を heading で回転（XY 平面上）
+      const lx = positionLocal.x
+      const ly = positionLocal.y
+      const rotatedX = lx.mul(cosH).sub(ly.mul(sinH))
+      const rotatedY = lx.mul(sinH).add(ly.mul(cosH))
+
+      material.positionNode = vec3(
+        rotatedX.add(rawPos.x),
+        rotatedY.add(rawPos.y),
+        float(0)
+      )
       mesh.frustumCulled = false
 
       return {
