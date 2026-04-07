@@ -104,12 +104,12 @@ function Scene({ entityCount = 2000 }) {
           </group>
 
       {/* GIS: GeoJSON 地図（XY→XZ 回転で床面に配置） */}
-      <group position={[0, -1.25, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+      <group position={[0, -1.25, -10]} rotation={[-Math.PI / 2, 0, -Math.PI ]}>
         <GeojsonLayer url='/data/world.geojson' view={WORLD_VIEW} />
       </group>
 
       {/* GPU 移動体パーティクル（billboarding は親の回転を無視するため独立配置） */}
-      <MovingEntitiesLayer key={entityCount} entityCount={entityCount} view={WORLD_VIEW} />
+      {/*<MovingEntitiesLayer key={entityCount} entityCount={entityCount} view={WORLD_VIEW} /> */}
     </>
   )
 }
