@@ -127,7 +127,7 @@ export function createInterpolationPass(rawObservationBuffer, options = {}) {
 
     const currentLon = mix(prevLon, lon, blend).toVar()
     const currentLat = mix(prevLat, lat, blend).toVar()
-    const projected = projectLonLatGPU(currentLon, currentLat, projUniforms).toVar()
+    const projected = projectLonLatGPU(currentLon, currentLat, projUniforms, projUniforms.projectionType).toVar()
 
     projectedPosition.assign(projected)
 

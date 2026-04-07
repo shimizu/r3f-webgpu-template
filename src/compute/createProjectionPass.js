@@ -82,7 +82,7 @@ export function createProjectionPass(rawObservationBuffer, options = {}) {
       .element(baseIndex.add(int(OBSERVATION_OFFSET.lat)))
       .toVar()
 
-    projectedPosition.assign(projectLonLatGPU(lon, lat, projUniforms))
+    projectedPosition.assign(projectLonLatGPU(lon, lat, projUniforms, projUniforms.projectionType))
   })().compute(entityCount, [WORKGROUP_SIZE])
 
   return {

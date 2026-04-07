@@ -1,21 +1,21 @@
 export const WORLD_VIEW = {
-  centerLon: 138,
+  centerLon: 130,
   centerLat: 0,
   worldScale: 4.6,
   altitudeScale: 0,
   sampleLonStep: 0.2,
   sampleLatStep: 0.2,
-  projectionType: 'equirectangular',
+  projectionType: ' equirectangular', //mercator,  equirectangular , natural-earth
 }
 
-export const TOKYO_BAY_VIEW = {
-  centerLon: 139.82,
-  centerLat: 35.54,
-  worldScale: 900,
+export const JAPAN_VIEW = {
+  centerLon: 136.5,
+  centerLat: 36.5,
+  worldScale: 80,
   altitudeScale: 0,
-  extentLon: 0.45,
-  extentLat: 0.35,
-  sampleLonStep: 0.02,
-  sampleLatStep: 0.02,
+  extentLon: 18,
+  extentLat: 16,
+  sampleLonStep: 0.05,
+  sampleLatStep: 0.05,
   projectionType: 'equirectangular',
 }

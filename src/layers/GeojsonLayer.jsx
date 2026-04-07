@@ -236,7 +236,7 @@ function GeojsonLayer({ url, view }) {
   // centerLon 変更時は view が変わり useMemo([geojson, view]) で geometry が再生成される
   const { fillMaterial, lineMaterial, pointMaterial } = useMemo(() => {
     const projUniforms = createProjectionUniforms(view)
-    const projectedPos = projectLonLatGPU(positionLocal.x, positionLocal.y, projUniforms)
+    const projectedPos = projectLonLatGPU(positionLocal.x, positionLocal.y, projUniforms, projUniforms.projectionType)
 
     const fillMaterial = new MeshBasicNodeMaterial({
       vertexColors: true,

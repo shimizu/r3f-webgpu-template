@@ -101,10 +101,10 @@ function Scene({ entityCount = 2000 }) {
 
       {/* GIS: GeoJSON 地図（XY→XZ 回転で床面に配置） */}
       <group position={[0, -1.249, -10]} rotation={[-Math.PI / 2, 0, -Math.PI ]}>
+       <MovingEntitiesLayer key={entityCount} entityCount={entityCount} view={WORLD_VIEW} /> 
         <GeojsonLayer url='./data/world.geojson' view={WORLD_VIEW} />
-       {/* <MovingEntitiesLayer key={entityCount} entityCount={entityCount} view={WORLD_VIEW} /> */}
       </group>
-
+ 
     </>
   )
 }

@@ -17,6 +17,7 @@ export function createProjectionUniforms(options = {}) {
 
   return {
     centerLonNode, centerLatNode, worldScaleNode, cosCenterLatNode,
+    projectionType: resolved.projectionType,
 
     update(nextOptions) {
       if (typeof nextOptions.centerLon === 'number') {
