@@ -23,7 +23,7 @@ const GRID_DEFAULTS = {
   subGridScale: 1.0,      // サブグリッド間隔
   lineWidth: 0.02,        // メインライン幅
   subLineWidth: 0.01,     // サブライン幅
-  baseColor: '#2a6e3f',   // 工作シートの緑
+  baseColor: '#3f73d3',   // 工作シートの緑
   lineColor: '#ffffff',   // グリッド線の色
   lineOpacity: 0.3,       // メインラインの不透明度
   subLineOpacity: 0.15,   // サブラインの不透明度
