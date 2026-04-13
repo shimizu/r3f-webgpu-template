@@ -19,6 +19,7 @@ import { WORLD_VIEW } from './gis/views'
 import GeojsonLayer from './layers/GeojsonLayer'
 import MovingEntitiesLayer from './layers/MovingEntitiesLayer'
 import TerrainLayer from './layers/TerrainLayer'
+import Labels3DLayer from './layers/Labels3DLayer'
 
 /**
  * シーン全体の構成を定義するコンポーネント。
@@ -31,7 +32,9 @@ import TerrainLayer from './layers/TerrainLayer'
 function Scene({ entityCount = 2000 }) {
   // eslint-disable-next-line no-unused-vars
   const [heightInfo, setHeightInfo] = useState(null)
-  const { showOcean } = useControls({ showOcean: true })
+  const { showOcean } = useControls({
+    showOcean: { value: true, label: '海面を表示' },
+  })
   
   return (
     <>
@@ -73,6 +76,9 @@ function Scene({ entityCount = 2000 }) {
           position={[0, 0.5, 0]}
         />
       )}
+
+      {/* HTML ラベル */}
+      <Labels3DLayer />
 
     </>
   )
