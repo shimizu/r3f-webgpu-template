@@ -3,7 +3,6 @@ import { useControls } from 'leva'
 import { MapControls } from '@react-three/drei'
 
 import LightingRig from './LightingRig'
-// eslint-disable-next-line no-unused-vars
 import SceneEffects from './effects/SceneEffects'
 // eslint-disable-next-line no-unused-vars
 import MaterialSamplesLayer from './layers/MaterialSamplesLayer'
@@ -40,7 +39,10 @@ function Scene({ entityCount = 2000 }) {
     <>
       {/* 太陽光や環境光を一括管理するリグ */}
       <LightingRig />
-      
+
+      {/* ポストプロセッシング (Bloom + Tilt-Shift) */}
+      <SceneEffects />
+
       {/* Preetham モデルによる動的な空の描画 */}
       <SkyLayer />
 

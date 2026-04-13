@@ -14,6 +14,7 @@ import { RenderPipeline } from 'three/webgpu'
 import { pass } from 'three/tsl'
 
 import { createBloomPass } from './createBloom'
+import { createTiltShiftPass } from './createTiltShift'
 // import { createGodraysPass } from './createGodrays'
 // import { createDofPass } from './createDof'
 
@@ -28,6 +29,9 @@ function SceneEffects() {
 
     // Bloom: シーンカラーに加算
     let outputNode = scenePassColor.add(createBloomPass(scenePassColor))
+
+    // Tilt-Shift: スクリーン Y バンドベースのミニチュア風ぼかし
+    outputNode = createTiltShiftPass(outputNode)
 
     // Godrays: 一時無効化
     // const scenePassDepth = scenePass.getTextureNode('depth')
