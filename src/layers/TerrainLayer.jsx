@@ -72,13 +72,17 @@ function createTerrainMaterial(colors, texMap, seaLevel = 0) {
 function gaussianBlur(data, width, height, radius) {
   if (radius <= 0) return data
 
-  // σ = radius / 2 でカーネル生成
-  const sigma = radius / 2
-  const kernelSize = radius * 2 + 1
+  // 小数部を補間係数として使い、整数カーネルでブラーした結果と元データをブレンド
+  const intRadius = Math.ceil(radius)
+  const blend = radius / intRadius // 1.0 なら完全ブラー、0.5 なら半分ブレンド
+
+  // σ = intRadius / 2 でカーネル生成
+  const sigma = intRadius / 2
+  const kernelSize = intRadius * 2 + 1
   const kernel = new Float32Array(kernelSize)
   let sum = 0
   for (let i = 0; i < kernelSize; i++) {
-    const x = i - radius
+    const x = i - intRadius
     kernel[i] = Math.exp(-(x * x) / (2 * sigma * sigma))
     sum += kernel[i]
   }
@@ -91,9 +95,9 @@ function gaussianBlur(data, width, height, radius) {
   for (let row = 0; row < height; row++) {
     for (let col = 0; col < width; col++) {
       let val = 0
-      for (let k = -radius; k <= radius; k++) {
+      for (let k = -intRadius; k <= intRadius; k++) {
         const sc = Math.min(Math.max(col + k, 0), width - 1)
-        val += data[row * width + sc] * kernel[k + radius]
+        val += data[row * width + sc] * kernel[k + intRadius]
       }
       temp[row * width + col] = val
     }
@@ -103,11 +107,18 @@ function gaussianBlur(data, width, height, radius) {
   for (let row = 0; row < height; row++) {
     for (let col = 0; col < width; col++) {
       let val = 0
-      for (let k = -radius; k <= radius; k++) {
+      for (let k = -intRadius; k <= intRadius; k++) {
         const sr = Math.min(Math.max(row + k, 0), height - 1)
-        val += temp[sr * width + col] * kernel[k + radius]
+        val += temp[sr * width + col] * kernel[k + intRadius]
       }
       out[row * width + col] = val
+    }
+  }
+
+  // 元データとブラー結果を blend 比率で補間
+  if (blend < 1.0) {
+    for (let i = 0; i < out.length; i++) {
+      out[i] = data[i] * (1 - blend) + out[i] * blend
     }
   }
 
