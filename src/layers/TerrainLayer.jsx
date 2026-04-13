@@ -23,11 +23,11 @@ const ELEVATION_STOPS = [0.0, 0.3, 0.4, 0.5, 0.7, 0.85, 1.0]
 const DEFAULT_COLORS = {
   deepOcean: '#0a1a3a',
   shallowOcean: '#1a6a8a',
-  shore: '#c2b280',
-  lowland: '#4a8a3a',
-  highland: '#2a5a1a',
-  mountain: '#8a7a6a',
-  peak: '#f0f0f0',
+  shore: '#a0835e',
+  lowland: '#d4c4a0',
+  highland: '#c2a46e',
+  mountain: '#a08050',
+  peak: '#030202',
   side: '#3a2a1a',
 }
 

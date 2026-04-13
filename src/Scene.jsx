@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useControls } from 'leva'
 import { MapControls } from '@react-three/drei'
 
 import LightingRig from './LightingRig'
@@ -13,12 +14,12 @@ import GridLayer from './layers/GridLayer'
 import WaterBlobLayer from './layers/WaterBlobLayer'
 // eslint-disable-next-line no-unused-vars
 import WaterBoxLayer from './layers/WaterBoxLayer'
-// eslint-disable-next-line no-unused-vars
 import WaterOceanLayer from './layers/WaterOceanLayer'
 import Coordinate from './gis/CoordinateContext'
 import { WORLD_VIEW } from './gis/views'
 import GeojsonLayer from './layers/GeojsonLayer'
 import MovingEntitiesLayer from './layers/MovingEntitiesLayer'
+import TerrainLayer from './layers/TerrainLayer'
 
 /**
  * シーン全体の構成を定義するコンポーネント。
@@ -31,6 +32,7 @@ import MovingEntitiesLayer from './layers/MovingEntitiesLayer'
 function Scene({ entityCount = 2000 }) {
   // eslint-disable-next-line no-unused-vars
   const [heightInfo, setHeightInfo] = useState(null)
+  const { showOcean } = useControls({ showOcean: true })
   
   return (
     <>
@@ -48,23 +50,27 @@ function Scene({ entityCount = 2000 }) {
         target={[0, 0, 0]}
       />
 
-      {/* 
-          GIS コンテキスト:
-          地理座標（lon/lat）を 3D 空間（x/y/z）へ投影する設定を提供します。
-          ここでは等距円筒図法を使用し、XZ 平面に配置されるよう回転させています。
-      */}
-      <Coordinate 
-        projection="equirectangular" 
-        view={WORLD_VIEW} 
-        position={[0, -1.249, -10]} 
-        rotation={[-Math.PI / 2, 0, -Math.PI]}
-      >
-        {/* 世界地図のベクトルデータレイヤー */}
-        <GeojsonLayer url='./data/world.geojson' />
-        
-        {/* リアルタイム補間を用いた移動体のパーティクルレイヤー */}
-        <MovingEntitiesLayer key={entityCount} entityCount={entityCount} />
-      </Coordinate>
+      {/* DEM 地形レイヤー */}
+      <TerrainLayer
+        url="./dem/hormuz.tif"
+        smooth={0.1}
+        heightScale={0.75}
+        baseHeight={1}
+        seaLevel={0.15}
+        position={[0, 0, 0]}
+      />
+
+      {/* 海面レイヤー */}
+      {showOcean && (
+        <WaterOceanLayer
+          width={15.9}
+          height={15.9}
+          depth={0.9}
+          opacity={0.85}
+          position={[0, 0, 0]}
+        />
+      )}
+
     </>
   )
 }
