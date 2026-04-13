@@ -12,7 +12,8 @@ import {
 } from 'three/tsl'
 import { fromArrayBuffer } from 'geotiff'
 
-const DEFAULT_SCALE = [16, 4, 16] // [幅, 標高レンジ, 奥行]
+const DEFAULT_SIZE = 16            // 基準幅（奥行は DEM アスペクト比から自動算出）
+const DEFAULT_HEIGHT_RANGE = 4     // 標高レンジ
 const MAX_DEM_SIZE = 512          // これを超える場合は縮小読み込み
 const DEFAULT_NODATA = -9999
 
@@ -31,7 +32,7 @@ const DEFAULT_COLORS = {
   side: '#3a2a1a',
 }
 
-function createTerrainMaterial(colors, texMap, seaLevel = 0) {
+function createTerrainMaterial(colors, texMap, seaLevel = 0, stops = ELEVATION_STOPS) {
   const material = new MeshPhysicalNodeMaterial({
     roughness: TERRAIN_MATERIAL.roughness,
     metalness: TERRAIN_MATERIAL.metalness,
@@ -50,17 +51,17 @@ function createTerrainMaterial(colors, texMap, seaLevel = 0) {
 
     const s = float(seaLevel)
     const c1 = mix(color(colors.deepOcean), color(colors.shallowOcean),
-      smoothstep(float(ELEVATION_STOPS[0]).add(s), float(ELEVATION_STOPS[1]).add(s), elevation))
+      smoothstep(float(stops[0]).add(s), float(stops[1]).add(s), elevation))
     const c2 = mix(c1, color(colors.shore),
-      smoothstep(float(ELEVATION_STOPS[1]).add(s), float(ELEVATION_STOPS[2]).add(s), elevation))
+      smoothstep(float(stops[1]).add(s), float(stops[2]).add(s), elevation))
     const c3 = mix(c2, color(colors.lowland),
-      smoothstep(float(ELEVATION_STOPS[2]).add(s), float(ELEVATION_STOPS[3]).add(s), elevation))
+      smoothstep(float(stops[2]).add(s), float(stops[3]).add(s), elevation))
     const c4 = mix(c3, color(colors.highland),
-      smoothstep(float(ELEVATION_STOPS[3]).add(s), float(ELEVATION_STOPS[4]).add(s), elevation))
+      smoothstep(float(stops[3]).add(s), float(stops[4]).add(s), elevation))
     const c5 = mix(c4, color(colors.mountain),
-      smoothstep(float(ELEVATION_STOPS[4]).add(s), float(ELEVATION_STOPS[5]).add(s), elevation))
+      smoothstep(float(stops[4]).add(s), float(stops[5]).add(s), elevation))
     const finalColor = mix(c5, color(colors.peak),
-      smoothstep(float(ELEVATION_STOPS[5]).add(s), float(ELEVATION_STOPS[6]).add(s), elevation))
+      smoothstep(float(stops[5]).add(s), float(stops[6]).add(s), elevation))
 
     material.colorNode = mix(finalColor, sideColor, sideMask)
   }
@@ -126,10 +127,13 @@ function gaussianBlur(data, width, height, radius) {
 }
 
 // 上面・側面・底面を持つ地形ジオメトリを構築
-function buildTerrainGeometry(demData, { terrainWidth, targetHeight, terrainDepth, smooth, heightScale: hScale, baseHeight }) {
+function buildTerrainGeometry(demData, { terrainWidth, targetHeight, smooth, heightScale: hScale, baseHeight }) {
   const { values, width, height, nodata } = demData
   const cols = width
   const rows = height
+
+  // DEM のアスペクト比を保持: 基準幅から奥行を自動算出
+  const terrainDepth = terrainWidth * (rows / cols)
   const baseY = -baseHeight
 
   // NODATA を 0 に置換した作業用配列
@@ -365,7 +369,9 @@ function buildTerrainGeometry(demData, { terrainWidth, targetHeight, terrainDept
 function TerrainLayer({
   url,
   texture: texturePath = null,
-  scale = DEFAULT_SCALE,
+  size = DEFAULT_SIZE,
+  heightRange = DEFAULT_HEIGHT_RANGE,
+  elevationStops = ELEVATION_STOPS,
   colors = DEFAULT_COLORS,
   smooth = 0,
   heightScale = 1.0,
@@ -459,20 +465,19 @@ function TerrainLayer({
   const { geometry, heightInfo } = useMemo(() => {
     if (!demData) return { geometry: null, heightInfo: null }
     return buildTerrainGeometry(demData, {
-      terrainWidth: scale[0],
-      targetHeight: scale[1],
-      terrainDepth: scale[2],
+      terrainWidth: size,
+      targetHeight: heightRange,
       smooth,
       heightScale,
       baseHeight,
     })
-  }, [demData, scale, smooth, heightScale, baseHeight])
+  }, [demData, size, heightRange, smooth, heightScale, baseHeight])
 
   useEffect(() => {
     if (heightInfo && onHeightData) onHeightData(heightInfo)
   }, [heightInfo, onHeightData])
 
-  const material = useMemo(() => createTerrainMaterial(mergedColors, texMap, seaLevel), [mergedColors, texMap, seaLevel])
+  const material = useMemo(() => createTerrainMaterial(mergedColors, texMap, seaLevel, elevationStops), [mergedColors, texMap, seaLevel, elevationStops])
 
   useEffect(() => {
     return () => {
