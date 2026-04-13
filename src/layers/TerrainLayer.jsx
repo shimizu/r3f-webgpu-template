@@ -12,7 +12,8 @@ import {
 } from 'three/tsl'
 import { fromArrayBuffer } from 'geotiff'
 
-const DEFAULT_SCALE = [16, 4, 16] // [幅, 標高レンジ, 奥行]
+const DEFAULT_SIZE = 16            // 基準幅（奥行は DEM アスペクト比から自動算出）
+const DEFAULT_HEIGHT_RANGE = 4     // 標高レンジ
 const MAX_DEM_SIZE = 512          // これを超える場合は縮小読み込み
 const DEFAULT_NODATA = -9999
 
@@ -23,15 +24,15 @@ const ELEVATION_STOPS = [0.0, 0.3, 0.4, 0.5, 0.7, 0.85, 1.0]
 const DEFAULT_COLORS = {
   deepOcean: '#0a1a3a',
   shallowOcean: '#1a6a8a',
-  shore: '#c2b280',
-  lowland: '#4a8a3a',
-  highland: '#2a5a1a',
-  mountain: '#8a7a6a',
-  peak: '#f0f0f0',
+  shore: '#a0835e',
+  lowland: '#d4c4a0',
+  highland: '#c2a46e',
+  mountain: '#a08050',
+  peak: '#030202',
   side: '#3a2a1a',
 }
 
-function createTerrainMaterial(colors, texMap, seaLevel = 0) {
+function createTerrainMaterial(colors, texMap, seaLevel = 0, stops = ELEVATION_STOPS) {
   const material = new MeshPhysicalNodeMaterial({
     roughness: TERRAIN_MATERIAL.roughness,
     metalness: TERRAIN_MATERIAL.metalness,
@@ -50,17 +51,17 @@ function createTerrainMaterial(colors, texMap, seaLevel = 0) {
 
     const s = float(seaLevel)
     const c1 = mix(color(colors.deepOcean), color(colors.shallowOcean),
-      smoothstep(float(ELEVATION_STOPS[0]).add(s), float(ELEVATION_STOPS[1]).add(s), elevation))
+      smoothstep(float(stops[0]).add(s), float(stops[1]).add(s), elevation))
     const c2 = mix(c1, color(colors.shore),
-      smoothstep(float(ELEVATION_STOPS[1]).add(s), float(ELEVATION_STOPS[2]).add(s), elevation))
+      smoothstep(float(stops[1]).add(s), float(stops[2]).add(s), elevation))
     const c3 = mix(c2, color(colors.lowland),
-      smoothstep(float(ELEVATION_STOPS[2]).add(s), float(ELEVATION_STOPS[3]).add(s), elevation))
+      smoothstep(float(stops[2]).add(s), float(stops[3]).add(s), elevation))
     const c4 = mix(c3, color(colors.highland),
-      smoothstep(float(ELEVATION_STOPS[3]).add(s), float(ELEVATION_STOPS[4]).add(s), elevation))
+      smoothstep(float(stops[3]).add(s), float(stops[4]).add(s), elevation))
     const c5 = mix(c4, color(colors.mountain),
-      smoothstep(float(ELEVATION_STOPS[4]).add(s), float(ELEVATION_STOPS[5]).add(s), elevation))
+      smoothstep(float(stops[4]).add(s), float(stops[5]).add(s), elevation))
     const finalColor = mix(c5, color(colors.peak),
-      smoothstep(float(ELEVATION_STOPS[5]).add(s), float(ELEVATION_STOPS[6]).add(s), elevation))
+      smoothstep(float(stops[5]).add(s), float(stops[6]).add(s), elevation))
 
     material.colorNode = mix(finalColor, sideColor, sideMask)
   }
@@ -72,13 +73,17 @@ function createTerrainMaterial(colors, texMap, seaLevel = 0) {
 function gaussianBlur(data, width, height, radius) {
   if (radius <= 0) return data
 
-  // σ = radius / 2 でカーネル生成
-  const sigma = radius / 2
-  const kernelSize = radius * 2 + 1
+  // 小数部を補間係数として使い、整数カーネルでブラーした結果と元データをブレンド
+  const intRadius = Math.ceil(radius)
+  const blend = radius / intRadius // 1.0 なら完全ブラー、0.5 なら半分ブレンド
+
+  // σ = intRadius / 2 でカーネル生成
+  const sigma = intRadius / 2
+  const kernelSize = intRadius * 2 + 1
   const kernel = new Float32Array(kernelSize)
   let sum = 0
   for (let i = 0; i < kernelSize; i++) {
-    const x = i - radius
+    const x = i - intRadius
     kernel[i] = Math.exp(-(x * x) / (2 * sigma * sigma))
     sum += kernel[i]
   }
@@ -91,9 +96,9 @@ function gaussianBlur(data, width, height, radius) {
   for (let row = 0; row < height; row++) {
     for (let col = 0; col < width; col++) {
       let val = 0
-      for (let k = -radius; k <= radius; k++) {
+      for (let k = -intRadius; k <= intRadius; k++) {
         const sc = Math.min(Math.max(col + k, 0), width - 1)
-        val += data[row * width + sc] * kernel[k + radius]
+        val += data[row * width + sc] * kernel[k + intRadius]
       }
       temp[row * width + col] = val
     }
@@ -103,11 +108,18 @@ function gaussianBlur(data, width, height, radius) {
   for (let row = 0; row < height; row++) {
     for (let col = 0; col < width; col++) {
       let val = 0
-      for (let k = -radius; k <= radius; k++) {
+      for (let k = -intRadius; k <= intRadius; k++) {
         const sr = Math.min(Math.max(row + k, 0), height - 1)
-        val += temp[sr * width + col] * kernel[k + radius]
+        val += temp[sr * width + col] * kernel[k + intRadius]
       }
       out[row * width + col] = val
+    }
+  }
+
+  // 元データとブラー結果を blend 比率で補間
+  if (blend < 1.0) {
+    for (let i = 0; i < out.length; i++) {
+      out[i] = data[i] * (1 - blend) + out[i] * blend
     }
   }
 
@@ -115,10 +127,13 @@ function gaussianBlur(data, width, height, radius) {
 }
 
 // 上面・側面・底面を持つ地形ジオメトリを構築
-function buildTerrainGeometry(demData, { terrainWidth, targetHeight, terrainDepth, smooth, heightScale: hScale, baseHeight }) {
+function buildTerrainGeometry(demData, { terrainWidth, targetHeight, smooth, heightScale: hScale, baseHeight }) {
   const { values, width, height, nodata } = demData
   const cols = width
   const rows = height
+
+  // DEM のアスペクト比を保持: 基準幅から奥行を自動算出
+  const terrainDepth = terrainWidth * (rows / cols)
   const baseY = -baseHeight
 
   // NODATA を 0 に置換した作業用配列
@@ -354,7 +369,9 @@ function buildTerrainGeometry(demData, { terrainWidth, targetHeight, terrainDept
 function TerrainLayer({
   url,
   texture: texturePath = null,
-  scale = DEFAULT_SCALE,
+  size = DEFAULT_SIZE,
+  heightRange = DEFAULT_HEIGHT_RANGE,
+  elevationStops = ELEVATION_STOPS,
   colors = DEFAULT_COLORS,
   smooth = 0,
   heightScale = 1.0,
@@ -448,20 +465,19 @@ function TerrainLayer({
   const { geometry, heightInfo } = useMemo(() => {
     if (!demData) return { geometry: null, heightInfo: null }
     return buildTerrainGeometry(demData, {
-      terrainWidth: scale[0],
-      targetHeight: scale[1],
-      terrainDepth: scale[2],
+      terrainWidth: size,
+      targetHeight: heightRange,
       smooth,
       heightScale,
       baseHeight,
     })
-  }, [demData, scale, smooth, heightScale, baseHeight])
+  }, [demData, size, heightRange, smooth, heightScale, baseHeight])
 
   useEffect(() => {
     if (heightInfo && onHeightData) onHeightData(heightInfo)
   }, [heightInfo, onHeightData])
 
-  const material = useMemo(() => createTerrainMaterial(mergedColors, texMap, seaLevel), [mergedColors, texMap, seaLevel])
+  const material = useMemo(() => createTerrainMaterial(mergedColors, texMap, seaLevel, elevationStops), [mergedColors, texMap, seaLevel, elevationStops])
 
   useEffect(() => {
     return () => {
