@@ -8,7 +8,6 @@ import SceneEffects from './effects/SceneEffects'
 // eslint-disable-next-line no-unused-vars
 import MaterialSamplesLayer from './layers/MaterialSamplesLayer'
 import SkyLayer from './layers/SkyLayer'
-// eslint-disable-next-line no-unused-vars
 import GridLayer from './layers/GridLayer'
 // eslint-disable-next-line no-unused-vars
 import WaterBlobLayer from './layers/WaterBlobLayer'
@@ -50,24 +49,28 @@ function Scene({ entityCount = 2000 }) {
         target={[0, 0, 0]}
       />
 
+      {/* 青いグリッドレイヤー */}
+      <GridLayer position={[0, -1, 0]} />
+
       {/* DEM 地形レイヤー */}
       <TerrainLayer
         url="./dem/hormuz.tif"
-        smooth={0.1}
-        heightScale={0.75}
-        baseHeight={1}
-        seaLevel={0.15}
-        position={[0, 0, 0]}
+        size={24}
+        smooth={1.25}
+        heightScale={0.5}
+        baseHeight={1.5}
+        seaLevel={0.19}
+        position={[0, 0.5, 0]}
       />
 
       {/* 海面レイヤー */}
       {showOcean && (
         <WaterOceanLayer
-          width={15.9}
-          height={15.9}
-          depth={0.9}
+          width={23.9}
+          height={12.5}
+          depth={1}
           opacity={0.85}
-          position={[0, 0, 0]}
+          position={[0, 0.5, 0]}
         />
       )}
 
