@@ -13,9 +13,13 @@ import WaterBlobLayer from './layers/WaterBlobLayer'
 // eslint-disable-next-line no-unused-vars
 import WaterBoxLayer from './layers/WaterBoxLayer'
 import WaterOceanLayer from './layers/WaterOceanLayer'
+// eslint-disable-next-line no-unused-vars
 import Coordinate from './gis/CoordinateContext'
+// eslint-disable-next-line no-unused-vars
 import { WORLD_VIEW } from './gis/views'
+// eslint-disable-next-line no-unused-vars
 import GeojsonLayer from './layers/GeojsonLayer'
+// eslint-disable-next-line no-unused-vars
 import MovingEntitiesLayer from './layers/MovingEntitiesLayer'
 import TerrainLayer from './layers/TerrainLayer'
 import Labels3DLayer from './layers/Labels3DLayer'
@@ -28,6 +32,7 @@ import Labels3DLayer from './layers/Labels3DLayer'
  * 2. GIS コンテキスト（Coordinate）を構築し、地理座標系を 3D 空間に投影。
  * 3. 投影された空間内に地図（GeoJSON）や移動体（MovingEntities）を描画。
  */
+// eslint-disable-next-line no-unused-vars
 function Scene({ entityCount = 2000 }) {
   // eslint-disable-next-line no-unused-vars
   const [heightInfo, setHeightInfo] = useState(null)
