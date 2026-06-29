@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# ローカル参照用のベンダリングコード（リポジトリには含めない）
+reference
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
