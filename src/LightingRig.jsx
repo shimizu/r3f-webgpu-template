@@ -5,21 +5,21 @@ function LightingRig() {
       <ambientLight intensity={0.6} color='#e8ddd0' />
       <hemisphereLight args={['#d8d0c4', '#8a8478', 0.4]} position={[0, 12, 0]} />
 
-      {/* デスクライト（メインキー）: 上からの暖白色、影くっきり */}
+      {/* メインキー: x軸に沿って右→左への強い平行光 */}
       <directionalLight
         castShadow
         color='#fff4e6'
-        intensity={0.8}
-        position={[2, 14, -6]}
-        shadow-mapSize-width={2048}
-        shadow-mapSize-height={2048}
-        shadow-camera-near={1}
-        shadow-camera-far={48}
-        shadow-camera-left={-20}
-        shadow-camera-right={20}
-        shadow-camera-top={20}
-        shadow-camera-bottom={-20}
-        shadow-bias={-0.0001}
+        intensity={1.5}
+        position={[-20, 12, 0]}
+        shadow-mapSize-width={4096}
+        shadow-mapSize-height={4096}
+        shadow-camera-near={0.5}
+        shadow-camera-far={60}
+        shadow-camera-left={-25}
+        shadow-camera-right={25}
+        shadow-camera-top={25}
+        shadow-camera-bottom={-25}
+        shadow-bias={-0.001}
       />
 
       {/* スポットライト（卓上ランプ風）: 手元を明るく照らす */}

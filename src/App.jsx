@@ -36,7 +36,7 @@ function App() {
       {/* 3D シーンの土台となる Canvas */}
       <Canvas
         shadows
-        camera={{ position: [0, 16, -34], fov: 36, near: 0.01, far: 500 }}
+        camera={{ position: [0, 15, -20], fov: 36, near: 0.01, far: 500 }}
         gl={createRenderer}
       >
         {/* シーンの構成要素（ライト、環境、各レイヤー） */}

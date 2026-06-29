@@ -1,24 +1,24 @@
 import { useState } from 'react'
+import { useControls } from 'leva'
 import { MapControls } from '@react-three/drei'
 
 import LightingRig from './LightingRig'
-// eslint-disable-next-line no-unused-vars
 import SceneEffects from './effects/SceneEffects'
 // eslint-disable-next-line no-unused-vars
 import MaterialSamplesLayer from './layers/MaterialSamplesLayer'
 import SkyLayer from './layers/SkyLayer'
-// eslint-disable-next-line no-unused-vars
 import GridLayer from './layers/GridLayer'
 // eslint-disable-next-line no-unused-vars
 import WaterBlobLayer from './layers/WaterBlobLayer'
 // eslint-disable-next-line no-unused-vars
 import WaterBoxLayer from './layers/WaterBoxLayer'
-// eslint-disable-next-line no-unused-vars
 import WaterOceanLayer from './layers/WaterOceanLayer'
 import Coordinate from './gis/CoordinateContext'
 import { WORLD_VIEW } from './gis/views'
 import GeojsonLayer from './layers/GeojsonLayer'
 import MovingEntitiesLayer from './layers/MovingEntitiesLayer'
+import TerrainLayer from './layers/TerrainLayer'
+import Labels3DLayer from './layers/Labels3DLayer'
 
 /**
  * シーン全体の構成を定義するコンポーネント。
@@ -31,12 +31,18 @@ import MovingEntitiesLayer from './layers/MovingEntitiesLayer'
 function Scene({ entityCount = 2000 }) {
   // eslint-disable-next-line no-unused-vars
   const [heightInfo, setHeightInfo] = useState(null)
+  const { showOcean } = useControls({
+    showOcean: { value: true, label: '海面を表示' },
+  })
   
   return (
     <>
       {/* 太陽光や環境光を一括管理するリグ */}
       <LightingRig />
-      
+
+      {/* ポストプロセッシング (Bloom + Tilt-Shift) */}
+      <SceneEffects />
+
       {/* Preetham モデルによる動的な空の描画 */}
       <SkyLayer />
 
@@ -48,23 +54,34 @@ function Scene({ entityCount = 2000 }) {
         target={[0, 0, 0]}
       />
 
-      {/* 
-          GIS コンテキスト:
-          地理座標（lon/lat）を 3D 空間（x/y/z）へ投影する設定を提供します。
-          ここでは等距円筒図法を使用し、XZ 平面に配置されるよう回転させています。
-      */}
-      <Coordinate 
-        projection="equirectangular" 
-        view={WORLD_VIEW} 
-        position={[0, -1.249, -10]} 
-        rotation={[-Math.PI / 2, 0, -Math.PI]}
-      >
-        {/* 世界地図のベクトルデータレイヤー */}
-        <GeojsonLayer url='./data/world.geojson' />
-        
-        {/* リアルタイム補間を用いた移動体のパーティクルレイヤー */}
-        <MovingEntitiesLayer key={entityCount} entityCount={entityCount} />
-      </Coordinate>
+      {/* 青いグリッドレイヤー */}
+      <GridLayer position={[0, -1, 0]} />
+
+      {/* DEM 地形レイヤー */}
+      <TerrainLayer
+        url="./dem/hormuz.tif"
+        size={24}
+        smooth={1.25}
+        heightScale={0.5}
+        baseHeight={1.5}
+        seaLevel={0.19}
+        position={[0, 0.5, 0]}
+      />
+
+      {/* 海面レイヤー */}
+      {showOcean && (
+        <WaterOceanLayer
+          width={23.9}
+          height={12.5}
+          depth={1}
+          opacity={0.85}
+          position={[0, 0.5, 0]}
+        />
+      )}
+
+      {/* HTML ラベル */}
+      <Labels3DLayer />
+
     </>
   )
 }
