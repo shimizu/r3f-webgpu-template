@@ -193,7 +193,7 @@ compute shader 内で各粒子に対して行う処理を、順を追って解�
 ### 8-1. jitter — 連続ノイズによる速度の揺らぎ
 
 粒子の動きに変化を与えるため、速度に微小な揺らぎ（jitter）を加える。
-完全な乱数ではなく、時刻と粒子番号を三角関数に通した連続ノイズを使う。
+完全な乱数ではなく、時刻・粒子番号・現在位置を三角関数に通した連続ノイズを使う。
 
 ```js
 import { float, sin, cos, add, vec3 } from 'three/tsl'
@@ -202,18 +202,35 @@ const idPhase = float(instanceIndex).mul(0.11).toVar()
 const frameScale = deltaNode.mul(60).toVar()
 
 const jitter = vec3(
-  sin(add(timeNode.mul(1.93), idPhase.mul(17.231))),
-  sin(add(timeNode.mul(2.17), idPhase.mul(53.817))),
-  cos(add(timeNode.mul(1.76), idPhase.mul(91.417)))
+  sin(
+    add(
+      add(timeNode.mul(1.93), idPhase.mul(17.231)),
+      add(currentPosition.z.mul(6.37), currentPosition.y.mul(3.11))
+    )
+  ),
+  sin(
+    add(
+      add(timeNode.mul(2.17), idPhase.mul(53.817)),
+      add(currentPosition.x.mul(5.71), currentPosition.z.mul(4.13))
+    )
+  ),
+  cos(
+    add(
+      add(timeNode.mul(1.76), idPhase.mul(91.417)),
+      add(currentPosition.x.mul(7.11), currentPosition.y.mul(3.41))
+    )
+  )
 ).mul(0.0009).mul(frameScale).toVar()
 ```
 
 なぜ乱数ではなく三角関数ベースのノイズを使うのか:
 - GPU の compute shader には `Math.random()` がない
-- 三角関数 + 粒子番号の組み合わせで、粒子ごとに異なる滑らかな揺らぎが得られる
+- 三角関数 + 粒子番号 + 現在位置の組み合わせで、粒子ごとに異なる滑らかな揺らぎが得られる
 - フレームごとの変化が連続的なので、動きが急に破綻しにくい
 
 `idPhase.mul(17.231)` のような無関係な係数を掛けることで、粒子間の相関を断ち切っている。
+さらに各軸の位相に `currentPosition` の別軸成分（z/y, x/z, x/y）を混ぜることで、
+同じ粒子でも位置が変わるたびに揺らぎ方が変化し、空間的にも変化に富んだ動きになる。
 
 ### 8-2. 速度の安定化 — length → normalize → clamp → mul
 
@@ -248,23 +265,36 @@ const nextPosition = currentPosition.add(stabilizedVelocity.mul(frameScale)).toV
 
 `frameScale`（= `delta * 60`）を掛けることで、フレームレートに依存しない移動量になる（詳細は後述）。
 
-### 8-4. 壁反射 — select で軸ごとに速度反転
+### 8-4. 壁反射 — select で軸ごとに速度反転 + clamp で位置を押し戻す
 
 粒子が一定範囲の外に出そうになったら、その軸の速度を反転させて跳ね返す。
+このとき、X/Z 軸は共通の `bounds` を使うが、Y 軸だけは床と天井を近づけたいので
+`Y_BOUNDS_RATIO`（= 0.7）を掛けた `yBounds` を使い、上下方向の箱を一回り浅くしている。
 
 ```js
-import { select } from 'three/tsl'
+import { select, clamp, vec3 } from 'three/tsl'
 
-const bounds = 1.0 // 空間の半径
+const Y_BOUNDS_RATIO = 0.7
+// boundsNode は uniform で渡す空間の半径。Y 軸だけ比率を掛けて浅くする
+const yBoundsNode = boundsNode.mul(Y_BOUNDS_RATIO).toVar()
 
-const hitX = nextPosition.x.abs().greaterThan(bounds)
-const hitY = nextPosition.y.abs().greaterThan(bounds)
-const hitZ = nextPosition.z.abs().greaterThan(bounds)
+const hitX = nextPosition.x.abs().greaterThan(boundsNode)
+const hitY = nextPosition.y.abs().greaterThan(yBoundsNode)
+const hitZ = nextPosition.z.abs().greaterThan(boundsNode)
 
+// 範囲外に出そうな軸だけ速度を反転
 const bouncedVelocity = vec3(
   select(hitX, stabilizedVelocity.x.negate(), stabilizedVelocity.x),
   select(hitY, stabilizedVelocity.y.negate(), stabilizedVelocity.y),
   select(hitZ, stabilizedVelocity.z.negate(), stabilizedVelocity.z)
+).toVar()
+
+// 速度反転だけだと、行き過ぎた位置がそのまま残ってしまう。
+// clamp で位置自体も箱の内側へ押し戻す
+const boundedPosition = vec3(
+  clamp(nextPosition.x, boundsNode.negate(), boundsNode),
+  clamp(nextPosition.y, yBoundsNode.negate(), yBoundsNode),
+  clamp(nextPosition.z, boundsNode.negate(), boundsNode)
 ).toVar()
 ```
 
@@ -272,28 +302,72 @@ const bouncedVelocity = vec3(
 GPU の compute shader では、条件分岐（if/else）よりも `select`（条件付き値選択）の方が効率が良い。
 `select(条件, 真の値, 偽の値)` は分岐なしで値を選べるため、GPU のパイプラインを止めずに済む。
 
+なぜ速度反転だけでなく `clamp` も行うのか:
+速度を反転しても、その時点で既に壁を越えた `nextPosition` はそのまま使われてしまう。
+次フレームで戻り切らずに壁の外へさらに進む「貼り付き」が起きることがあるため、
+`clamp` で位置自体を箱の内側に丸めておくと、粒子が必ず空間内に留まる。
+
 ### 8-5. 寿命とリスポーン
 
 各粒子は残り寿命を持ち、毎フレーム `delta` ぶん減少する。
-寿命が 0 以下になったら、初期位置・新しい速度・最大寿命で再スタートする。
+寿命が 0 以下になったら再スタートするが、ここで重要なのは
+**初期位置バッファを保持していない** こと。代わりに `sin`/`cos` ベースの手続き的な式で
+リスポーン先の位置と速度をその場で生成する。位置だけでなく **速度も再生成** する点に注意。
 
 ```js
-const currentLife = lifeNode.element(instanceIndex).toVar()
-const maxLife = maxLifeNode.element(instanceIndex)
-
 const nextLife = currentLife.sub(deltaNode).toVar()
 const expired = nextLife.lessThanEqual(0)
 
-// 寿命切れなら最大寿命にリセット、そうでなければ減少後の値を使う
-const finalLife = select(expired, maxLife, nextLife)
+// リスポーン用のシード。時刻と粒子番号から連続的に変化する
+const respawnSeed = timeNode.mul(0.31).add(idPhase.mul(41.17)).toVar()
 
-// 位置も寿命切れなら初期位置にリセット
+// 手続き的に箱の中の位置を生成（初期位置バッファは持たない）
+const respawnPosition = vec3(
+  sin(respawnSeed.mul(1.3).add(idPhase.mul(3.7))).mul(boundsNode),
+  sin(respawnSeed.mul(1.9).add(idPhase.mul(7.1))).mul(yBoundsNode),
+  cos(respawnSeed.mul(1.6).add(idPhase.mul(5.3))).mul(boundsNode)
+).toVar()
+
+// 速度も新しい方向・速さで再生成する
+const respawnDirection = normalize(
+  vec3(
+    sin(respawnSeed.mul(2.1).add(idPhase.mul(9.2))),
+    sin(respawnSeed.mul(2.7).add(idPhase.mul(13.4))),
+    cos(respawnSeed.mul(2.4).add(idPhase.mul(11.7)))
+  )
+).toVar()
+const respawnSpeed = maxLife
+  .mul(0.0016)
+  .add(0.0024)
+  .mul(sin(respawnSeed.mul(3.2)).mul(0.5).add(1.0))
+  .toVar()
+const respawnVelocity = respawnDirection.mul(respawnSpeed).toVar()
+
+// 寿命切れなら手続き生成した位置・速度・最大寿命に切り替える
+const finalVelocity = vec3(
+  select(expired, respawnVelocity.x, bouncedVelocity.x),
+  select(expired, respawnVelocity.y, bouncedVelocity.y),
+  select(expired, respawnVelocity.z, bouncedVelocity.z)
+).toVar()
 const finalPosition = vec3(
-  select(expired, initialPosition.x, nextPosition.x),
-  select(expired, initialPosition.y, nextPosition.y),
-  select(expired, initialPosition.z, nextPosition.z)
-)
+  select(expired, respawnPosition.x, boundedPosition.x),
+  select(expired, respawnPosition.y, boundedPosition.y),
+  select(expired, respawnPosition.z, boundedPosition.z)
+).toVar()
+const finalLife = select(expired, maxLife, nextLife).toVar()
 ```
+
+なぜ初期位置バッファではなく手続き生成なのか:
+- 初期位置を別バッファに保持するとメモリと管理コストがかかる
+- `respawnSeed`（時刻 + 粒子番号）から `sin`/`cos` で位置を作れば、リスポーンのたびに
+  異なる場所へ散り、特定の点に粒子が固まらない
+- `boundsNode` / `yBoundsNode` を掛けているので、リスポーン位置は必ず箱の内側に収まる
+
+なぜ速度も再生成するのか:
+- 位置だけ戻して速度を引き継ぐと、リスポーン直後にすぐ壁へ向かうなど偏りが出る
+- 方向（`respawnDirection`）と速さ（`respawnSpeed`）を作り直すことで、
+  生まれ変わった粒子が新鮮な軌跡を描く
+- `respawnSpeed` は `maxLife` を混ぜているため、寿命の長い粒子ほど少し速く動く
 
 なぜ寿命を持たせるのか:
 - 粒子が永遠に動き続けると、空間の片隅に偏ったり単調な動きになる
@@ -352,30 +426,84 @@ init で明示的に実行することで、描画前に確実にバッファの
 compute shader が更新した位置バッファを、描画マテリアルから直接参照する。
 CPU への読み戻しは一切行わない。
 
+`three/tsl` には `billboarding()` や `shapeCircle()` といったビルボード・形状用の
+ビルトインノードが用意されており、丸い点を手早く描くだけならこれらが便利。
+ただし、このリポジトリでの実例（`src/layers/RainLayer.jsx`）は、速度方向に
+引き伸ばした「ストリーク（雨筋）」を描くために、`billboarding`/`shapeCircle`/`alphaTest` を
+使わず、行列を直接扱う手書きの vertex shader を組んでいる。以下はその実装に沿った例。
+
 ```js
 import { MeshBasicNodeMaterial } from 'three/webgpu'
-import { billboarding, instanceIndex, shapeCircle } from 'three/tsl'
-import { DoubleSide, InstancedMesh, Matrix4, PlaneGeometry } from 'three'
+import {
+  Fn,
+  cameraProjectionMatrix,
+  cameraViewMatrix,
+  float,
+  instanceIndex,
+  length,
+  modelWorldMatrix,
+  normalize,
+  positionLocal,
+  smoothstep,
+  vec4,
+} from 'three/tsl'
+import {
+  AdditiveBlending,
+  DoubleSide,
+  InstancedMesh,
+  Matrix4,
+  PlaneGeometry,
+} from 'three'
 
-const PARTICLE_SIZE = 0.018
-const geometry = new PlaneGeometry(PARTICLE_SIZE, PARTICLE_SIZE, 1, 1)
+const STREAK_LENGTH = 0.35   // 速度方向の引き伸ばし量
+const STREAK_WIDTH = 0.003   // 粒子の横幅
+const STREAK_MIN_LENGTH = 0.02
+const STREAK_MAX_LENGTH = 0.5
 
+const geometry = new PlaneGeometry(1, 1)
 const material = new MeshBasicNodeMaterial({
+  color: '#aaccff',
   transparent: true,
   depthWrite: false,
   side: DoubleSide,
+  blending: AdditiveBlending, // 重なるほど明るく光る
 })
 
-// compute が更新する positionNode を vertex shader から直接読む
-material.vertexNode = billboarding({
-  position: positionNode.element(instanceIndex),
-  horizontal: true,
-  vertical: true,
-})
+// compute が更新する位置・速度バッファを vertex shader から直接読む
+const posNode = positionNode.element(instanceIndex)
+const velNode = velocityNode.element(instanceIndex)
 
-// UV から円形の alpha を生成して丸い粒子に見せる
-material.opacityNode = shapeCircle()
-material.alphaTest = 0.5
+// 速度方向ストリーク: ビュー空間で速度方向に quad を引き伸ばす
+material.vertexNode = Fn(() => {
+  const worldPos = modelWorldMatrix.mul(vec4(posNode, 1.0))
+  const viewPos = cameraViewMatrix.mul(worldPos)
+
+  // 速度もビュー空間へ。これでカメラに対する見かけの向きで引き伸ばせる
+  const velView = cameraViewMatrix.mul(vec4(velNode, 0.0))
+  const speed = length(velView.xyz).toVar()
+  const velDir = normalize(velView.xyz.add(0.0001)).toVar()
+
+  // ストリーク長は速度に比例させ、min/max でクランプ
+  const streakLen = speed.mul(STREAK_LENGTH)
+    .max(float(STREAK_MIN_LENGTH))
+    .min(float(STREAK_MAX_LENGTH))
+    .toVar()
+
+  // quad のローカル座標を、速度方向（縦）と直交方向（横）に割り当てる
+  const right = normalize(velDir.cross(vec4(0, 0, 1, 0).xyz)).toVar()
+  const offset = velDir.mul(positionLocal.y).mul(streakLen)
+    .add(right.mul(positionLocal.x).mul(STREAK_WIDTH))
+
+  const finalViewPos = viewPos.add(vec4(offset, 0.0))
+  return cameraProjectionMatrix.mul(finalViewPos)
+})()
+
+// 不透明度は速度に連動させる（速い粒子ほど濃く見せる）
+material.opacityNode = Fn(() => {
+  const speed = length(velocityNode.element(instanceIndex))
+  const speedFactor = smoothstep(float(0), float(0.1), speed)
+  return float(0.35).add(speedFactor.mul(0.25))
+})()
 
 // InstancedMesh で粒子数ぶんの quad を描画
 const mesh = new InstancedMesh(geometry, material, particleCount)
@@ -391,10 +519,17 @@ mesh.frustumCulled = false
 ```
 
 ポイント:
-- `positionNode.element(instanceIndex)` により、各インスタンスが自分の粒子位置を読む
-- `billboarding()` により、quad が常にカメラの方を向く
-- `shapeCircle()` により、四角い quad が丸い粒子に見える
-- instance 行列は使わず、位置は完全に GPU バッファから取得している
+- `positionNode.element(instanceIndex)` / `velocityNode.element(instanceIndex)` で、
+  各インスタンスが自分の粒子の位置と速度を読む
+- ビルボードや形状を `billboarding()` / `shapeCircle()` に任せず、
+  `modelWorldMatrix` → `cameraViewMatrix` → `cameraProjectionMatrix` の行列変換を
+  手書きすることで、速度方向へ自由に引き伸ばした形状を作れる
+- `opacityNode` を速度に連動させ、`AdditiveBlending` と組み合わせて発光感を出す
+- instance 行列は単位行列のまま使わず、位置は完全に GPU バッファから取得している
+- 丸い点で十分なケースなら、この手書き vertex shader の代わりに
+  `material.vertexNode = billboarding({ position: posNode })` +
+  `material.opacityNode = shapeCircle()` + `material.alphaTest = 0.5` という
+  ビルトインノードの組み合わせでも書ける
 
 ---
 
@@ -484,16 +619,40 @@ const nextPosition = currentPosition.add(velocity.mul(frameScale))
 ## 15. GPU リソースの破棄
 
 GPU リソースは JavaScript のガベージコレクションでは解放されない。
-明示的に `.dispose()` を呼ぶ必要がある。
+明示的に `.dispose()` を呼ぶ必要がある。ここで重要なのは **破棄の責務を分けている** こと。
+
+- compute runner（`runBarsCompute.js` 相当）の `destroy()` は、自分が作った
+  `computeNode.dispose()` **のみ** を担当する。geometry / material は compute 側では
+  生成していないので、ここでは破棄しない。
+- geometry / material は描画レイヤー（`RainLayer.jsx` 相当）が生成しているため、
+  その破棄も描画側の責任。React なら `useEffect` の cleanup でまとめて破棄する。
 
 ```js
-// compute shader ノードの破棄
-computeNode.dispose()
-
-// 描画リソースの破棄
-geometry.dispose()
-material.dispose()
+// compute runner 側: 自分が持つ compute ノードだけを破棄
+return {
+  // ...
+  destroy() {
+    computeNode.dispose()
+  },
+}
 ```
+
+```js
+// 描画レイヤー側（React の useEffect cleanup 例）:
+useEffect(() => {
+  resources.system.init(renderer)
+  return () => {
+    resources.system.destroy()      // compute ノードの破棄
+    resources.geometry.dispose()    // 描画側が作った geometry
+    resources.material.dispose()    // 描画側が作った material
+  }
+}, [renderer, resources])
+```
+
+なぜ責務を分けるのか:
+- compute runner は「位置・速度・寿命を計算する」役割で、描画用の geometry / material を知らない
+- 描画レイヤーは「どう見せるか」を担当し、geometry / material を生成・所有している
+- 各自が「自分で作ったものを自分で捨てる」ようにすると、二重破棄や破棄漏れが起きにくい
 
 なぜ破棄が必要か:
 - GPU メモリは有限で、解放しないとリークする

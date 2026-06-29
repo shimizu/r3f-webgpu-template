@@ -8,9 +8,9 @@
 |------|------|------|
 | WebGPU レンダラー | 有効 | antialias: true |
 | シャドウマップ | 有効 | directional 2048x2048 |
-| TSL シェーダー | 活用中 | 水面・雲・地形・雨 |
+| TSL シェーダー | 活用中 | アクティブな Scene.jsx は SkyLayer（Preetham 空）・GeojsonLayer・MovingEntitiesLayer 中心。Terrain/Rain/Water 系レイヤーは import 済みだが未マウント |
 | IBL 環境マップ | 未使用 | StudioEnvironment.jsx は存在するが未接続 |
-| ポストプロセッシング | **未使用** | @react-three/postprocessing は依存に存在 |
+| ポストプロセッシング | **実装済み・未マウント** | `src/effects/` に実装あり。後述の通り SceneEffects は Scene.jsx に未マウント |
 | トーンマッピング | デフォルト | 明示設定なし |
 | フォグ | 基本 | 線形フォグのみ |
 
@@ -18,18 +18,46 @@
 
 ## 1. ポストプロセッシング（TSL ネイティブ）
 
-three.js r183 の `examples/jsm/tsl/display/` に WebGPU ネイティブのエフェクトノードが揃っている。
+three.js r183 の `addons/tsl/display/`（= `examples/jsm/tsl/display/`）に WebGPU ネイティブのエフェクトノードが揃っている。
 WebGL 用の postprocessing ライブラリとは別系統。
+
+### 実装状況
+
+本プロジェクトでは `src/effects/` 配下に TSL ポストプロセスが**実装済み**:
+
+| ファイル | 内容 | 状態 |
+|---------|------|------|
+| `src/effects/createBloom.js` | `bloom` ノードのラッパー（`createBloomPass`） | **有効** |
+| `src/effects/createDof.js` | `dof` ノードのラッパー（`createDofPass`） | コメントアウトで無効化 |
+| `src/effects/createGodrays.js` | `godrays` ノードのラッパー（`createGodraysPass`） | コメントアウトで無効化 |
+| `src/effects/SceneEffects.jsx` | `RenderPipeline` + `pass(scene, camera)` で合成 | 後述（未マウント） |
+
+`SceneEffects.jsx` は `RenderPipeline(renderer)` と `pass(scene, camera)` でシーンパスを作り、
+各エフェクトをノードグラフでチェーン合成して `rp.outputNode` に渡す。
+現状は **Bloom のみ有効**で、`scenePassColor.add(createBloomPass(scenePassColor))` としてシーンカラーに加算合成している。
+**Godrays と DoF は import 行を含めてコメントアウトされており無効**。
+
+> ⚠️ **重要: 現状は未マウント**
+> `SceneEffects` は `Scene.jsx` で import されてはいるが（`eslint-disable no-unused-vars` 付き）、
+> JSX ツリーにマウントされていないため、実行時にはポストプロセスは描画されない。
+> 実装は存在するが、有効化するには `Scene.jsx` で `<SceneEffects />` をマウントする必要がある。
+
+各エフェクトの import パスは以下の通り（実装準拠）:
+
+```js
+import { bloom } from 'three/addons/tsl/display/BloomNode.js'
+import { dof } from 'three/addons/tsl/display/DepthOfFieldNode.js'
+import { godrays } from 'three/addons/tsl/display/GodraysNode.js'
+```
 
 ### 高インパクト
 
-#### Bloom（BloomNode）
+#### Bloom（BloomNode）— 実装済み・有効
 輝度の高い部分を光らせる。雨粒のバックライト反射やスプラッシュの発光に効果的。
+`createBloom.js` で `bloom(scenePassColor, strength, radius, threshold)` をラップ済み。
 
 ```js
-import { bloom } from 'three/tsl'
-// or
-import { BloomNode } from 'three/examples/jsm/tsl/display/BloomNode.js'
+import { bloom } from 'three/addons/tsl/display/BloomNode.js'
 ```
 
 #### GTAO（GTAONode）— アンビエントオクルージョン
@@ -37,14 +65,15 @@ import { BloomNode } from 'three/examples/jsm/tsl/display/BloomNode.js'
 SSAO より高品質で WebGPU に最適化されている。
 
 ```js
-import { GTAONode } from 'three/examples/jsm/tsl/display/GTAONode.js'
+import { GTAONode } from 'three/addons/tsl/display/GTAONode.js'
 ```
 
-#### Depth of Field（DepthOfFieldNode）
+#### Depth of Field（DepthOfFieldNode）— 実装済み・無効化中
 ジオラマ感を強化する最有力候補。ティルトシフト風のボケで模型感を演出。
+`createDof.js` で `dof(inputNode, viewZ, focusDistance, focalLength, bokehScale)` をラップ済みだが、SceneEffects ではコメントアウトされている。
 
 ```js
-import { DepthOfFieldNode } from 'three/examples/jsm/tsl/display/DepthOfFieldNode.js'
+import { dof } from 'three/addons/tsl/display/DepthOfFieldNode.js'
 ```
 
 ### 中インパクト
@@ -53,14 +82,15 @@ import { DepthOfFieldNode } from 'three/examples/jsm/tsl/display/DepthOfFieldNod
 濡れた地面の反射に有効。水面や雨で濡れた路面の光沢表現。
 
 ```js
-import { SSRNode } from 'three/examples/jsm/tsl/display/SSRNode.js'
+import { SSRNode } from 'three/addons/tsl/display/SSRNode.js'
 ```
 
-#### God Rays（GodraysNode）
+#### God Rays（GodraysNode）— 実装済み・無効化中
 雲の隙間から差す光の筋。ドラマチックな雨天表現に。
+`createGodrays.js` で `godrays(scenePassDepth, camera, light)` をラップ済みだが、SceneEffects ではコメントアウトされている。
 
 ```js
-import { GodraysNode } from 'three/examples/jsm/tsl/display/GodraysNode.js'
+import { godrays } from 'three/addons/tsl/display/GodraysNode.js'
 ```
 
 #### Motion Blur
@@ -138,8 +168,8 @@ renderer.outputColorSpace = THREE.SRGBColorSpace
 有効化すると PBR マテリアル（水面・地形）の環境反射が劇的に改善する。
 
 ```jsx
-// Scene.jsx で追加
-import StudioEnvironment from '../StudioEnvironment'
+// Scene.jsx で追加（StudioEnvironment.jsx は src/ 直下にあるため同階層パス）
+import StudioEnvironment from './StudioEnvironment'
 
 <StudioEnvironment />
 ```
@@ -265,17 +295,17 @@ three.js r183 の `examples/jsm/tsl/display/` に存在する全ノード:
 ### Phase 1: 即効性が高いもの
 1. **トーンマッピング設定**（ACESFilmic）— 1行で改善
 2. **IBL 環境マップ有効化**（StudioEnvironment）— PBR 反射が劇的改善
-3. **Bloom**（BloomNode）— 雨粒とスプラッシュの発光
+3. **Bloom**（BloomNode）— 雨粒とスプラッシュの発光（`src/effects/createBloom.js` 実装済み・有効。あとは `SceneEffects` のマウントのみ）
 
 ### Phase 2: ジオラマ感の強化
-4. **Depth of Field**（DepthOfFieldNode）— ティルトシフト風ボケ
+4. **Depth of Field**（DepthOfFieldNode）— ティルトシフト風ボケ（`src/effects/createDof.js` 実装済み・コメントアウト中。有効化するだけ）
 5. **GTAO**（GTAONode）— 地形の谷間に自然な影
 6. **Wetness 表現**（TSL roughness 制御）— 濡れた地面
 
 ### Phase 3: 映像品質の仕上げ
 7. **Film Grain**（FilmNode）— カメラ撮影感
 8. **Chromatic Aberration** — レンズ感
-9. **God Rays**（GodraysNode）— 雲間の光線（晴れ間演出時）
+9. **God Rays**（GodraysNode）— 雲間の光線（晴れ間演出時）（`src/effects/createGodrays.js` 実装済み・コメントアウト中）
 10. **SSR**（SSRNode）— 水面・濡れ面の反射
 
 ### 注意事項

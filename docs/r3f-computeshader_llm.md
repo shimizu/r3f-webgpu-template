@@ -78,8 +78,10 @@ const computeNode = Fn(() => {
 | 条件分岐 | `select(condition, trueVal, falseVal)` | 条件選択（WGSL の select） |
 | 比較 | `.greaterThan()`, `.lessThan()`, `.lessThanEqual()`, `.abs()` | 比較演算 |
 | インデックス | `instanceIndex` | 現在のスレッドが担当する要素番号 |
-| マテリアル | `billboarding({ position, horizontal, vertical })` | ビルボード変換 |
-| マテリアル | `shapeCircle()` | 円形マスク生成 |
+| マテリアル | `positionLocal` | ジオメトリのローカル頂点座標ノード（頂点変換に使用） |
+| マテリアル | `vec3(...)` を `material.positionNode` へ接続 | 頂点位置を compute 出力＋heading 回転で構築 |
+
+> 注: 旧版で記載していた `billboarding({...})` / `shapeCircle()` は本プロジェクトでは**使用していない**。エンティティは手書きの三角形ジオメトリを `material.positionNode` で配置・回転する（§6・§7 参照）。
 
 ---
 
@@ -163,44 +165,62 @@ function MovingEntitiesLayer() {
 
 ## 6. Compute 出力と描画の直接接続
 
-### 技術: `positionNode` を `material.vertexNode` に渡すゼロコピー描画
+### 技術: `positionNode` に compute 出力＋heading 回転を接続するゼロコピー描画
 
 ```js
 import { MeshBasicNodeMaterial } from 'three/webgpu'
-import { billboarding, instanceIndex, shapeCircle } from 'three/tsl'
+import { cos, float, instanceIndex, positionLocal, sin, vec3 } from 'three/tsl'
 
 const material = new MeshBasicNodeMaterial({
+  color: '#ffffff',
   transparent: true,
   depthWrite: false,
   side: DoubleSide,
 })
 
-// compute の出力ノードを直接描画の頂点位置として使用
-material.vertexNode = billboarding({
-  position: system.positionNode.element(instanceIndex),
-  horizontal: true,
-  vertical: true,
-})
-material.opacityNode = shapeCircle()
-material.alphaTest = 0.5
+// compute の出力（補間・投影済み位置と進行方向）を取得
+const rawPos = system.positionNode.element(instanceIndex)
+const heading = system.headingNode.element(instanceIndex)
+const cosH = cos(heading)
+const sinH = sin(heading)
+
+// 各インスタンスの三角形ローカル頂点を heading で回転し、投影位置へ平行移動する
+const lx = positionLocal.x
+const ly = positionLocal.y
+const rotatedX = lx.mul(cosH).sub(ly.mul(sinH))
+const rotatedY = lx.mul(sinH).add(ly.mul(cosH))
+
+material.positionNode = vec3(
+  rotatedX.add(rawPos.x),
+  rotatedY.add(rawPos.y),
+  float(0)
+)
 ```
 
 **要点:**
 - `MeshBasicNodeMaterial` は `three/webgpu` のノードベースマテリアル。TSL ノードを各種プロパティに接続できる
-- `vertexNode` にノードを設定すると、頂点シェーダーの位置計算を完全にカスタマイズできる
-- `opacityNode` に `shapeCircle()` を接続すると、四角ポリゴンが円形に見えるマスクを自動生成する
-- compute が書き込んだ `positionNode` をそのまま参照するため、**CPU を経由せずに GPU 上でデータが流れる**
+- `positionNode` にノードを設定すると、頂点シェーダーの位置計算を完全にカスタマイズできる
+- `billboarding` / `shapeCircle` / `opacityNode` / `alphaTest` は使わない。代わりに `positionLocal`（ローカル頂点）を `cos`/`sin` で回転して進行方向（heading）を表現する
+- compute が書き込んだ `positionNode`・`headingNode` をそのまま参照するため、**CPU を経由せずに GPU 上でデータが流れる**
 
 ---
 
 ## 7. InstancedMesh による大量エンティティ描画
 
-### 技術: InstancedMesh + ビルボード + compute 位置
+### 技術: InstancedMesh + 三角形ジオメトリ + compute 位置
 
 ```js
-import { InstancedMesh, Matrix4, PlaneGeometry } from 'three'
+import { BufferGeometry, Float32BufferAttribute, InstancedMesh, Matrix4 } from 'three'
 
-const geometry = new PlaneGeometry(ENTITY_SIZE, ENTITY_SIZE, 1, 1)
+// 手書きの三角形ジオメトリ（3頂点）。先端が進行方向を指す
+const s = ENTITY_SIZE
+const geometry = new BufferGeometry()
+geometry.setAttribute('position', new Float32BufferAttribute([
+  0, s, 0,                // 先端
+  -s * 0.5, -s * 0.5, 0,  // 左後方
+  s * 0.5, -s * 0.5, 0,   // 右後方
+], 3))
+
 const mesh = new InstancedMesh(geometry, material, entityCount)
 
 // 位置は compute shader が決めるので、行列はすべて単位行列
@@ -214,8 +234,8 @@ mesh.frustumCulled = false  // 全エンティティが視野内にある前提
 ```
 
 **要点:**
-- `PlaneGeometry` の小さな四角形を1インスタンスとし、最大100万個を1ドローコールで描画
-- 位置は `vertexNode` で compute 出力から取るため、`setMatrixAt` は単位行列で初期化するだけ
+- 各インスタンスは `PlaneGeometry` の四角ではなく、手書きの三角形 `BufferGeometry`（3頂点）。三角形の向きで進行方向を視覚化する
+- 位置・回転は `material.positionNode` が compute 出力（`positionNode` / `headingNode`）から計算するため、`setMatrixAt` は単位行列で初期化するだけ
 - `setColorAt` でエンティティ種別ごとの色を CPU 側で設定（航空機: `#ffd166`、船舶: `#66d9ff`）
 - `frustumCulled = false` でフラスタムカリングを無効化（compute が位置を管理するため Three.js のバウンディングボックスが正確でない）
 
@@ -325,40 +345,51 @@ const lon = rawObservationNode.element(baseIndex.add(int(OBSERVATION_OFFSET.lon)
 
 ---
 
-## 11. GPU 上での地理座標投影（等距円筒図法）
+## 11. GPU 上での地理座標投影（複数図法対応）
 
-### 技術: Compute Shader 内で lon/lat → world 座標変換
+### 技術: `projectLonLatGPU()` で lon/lat → world 座標変換
+
+`src/gis/projectionGPU.js` の `projectLonLatGPU(lonNode, latNode, uniforms, projectionType)` が投影の中核。まず経度を `-PI..PI` にラッピングしてラジアンへ変換し、図法ごとの関数に振り分ける。
 
 ```js
-function createProjectedNode(lonNode, latNode, worldScaleNode, centerLonNode, centerLatNode, cosCenterLatNode) {
+export function projectLonLatGPU(lonNode, latNode, uniforms, projectionType = 'equirectangular') {
+  const { wrappedLambda, phi } = wrapLambdaAndPhi(lonNode, latNode, uniforms)
+  const projectionFn = PROJECTIONS[projectionType] ?? equirectangularProjection
+  return projectionFn(wrappedLambda, phi, uniforms)
+}
+```
+
+経度ラッピングと図法分岐:
+
+```js
+// 日付変更線ラッピング: -PI..PI に正規化
+function wrapLambdaAndPhi(lonNode, latNode, uniforms) {
+  const { centerLonNode, centerLatNode } = uniforms
   const lambda = lonNode.sub(centerLonNode).mul(DEG2RAD).toVar()
   const phi = latNode.sub(centerLatNode).mul(DEG2RAD).toVar()
 
-  // 日付変更線ラッピング: -PI..PI に正規化
   const wrappedPositive = select(
-    lambda.greaterThan(float(PI)),
-    lambda.sub(float(TAU)),
-    lambda
+    lambda.greaterThan(float(PI)), lambda.sub(float(TAU)), lambda
   ).toVar()
   const wrappedLambda = select(
-    wrappedPositive.lessThan(float(-PI)),
-    wrappedPositive.add(float(TAU)),
-    wrappedPositive
+    wrappedPositive.lessThan(float(-PI)), wrappedPositive.add(float(TAU)), wrappedPositive
   ).toVar()
+  return { wrappedLambda, phi }
+}
 
-  return vec3(
-    wrappedLambda.mul(cosCenterLatNode).mul(worldScaleNode),
-    phi.mul(worldScaleNode),
-    float(0)
-  )
+const PROJECTIONS = {
+  equirectangular: equirectangularProjection,        // x = λ·cos(φ_0)·scale, y = φ·scale
+  mercator: mercatorProjection,                       // x = λ·scale, y = ln(tan(π/4 + φ/2))·scale
+  'lambert-cylindrical': lambertCylindricalProjection,// x = λ·cos(φ_0)·scale, y = sin(φ)·scale
+  'natural-earth': naturalEarthProjection,            // d3-geo-projection 準拠の多項式疑似円筒
 }
 ```
 
 **要点:**
-- 等距円筒図法: `x = (lon - centerLon) * cos(centerLat) * scale`, `y = (lat - centerLat) * scale`
+- 対応図法は4種: `equirectangular`（等距円筒）/ `mercator`（メルカトル）/ `lambert-cylindrical`（ランベルト正積円筒）/ `natural-earth`（Natural Earth I）。`projectionType` で切り替える
 - 日付変更線（±180度）をまたぐデータのために、lambda を `-PI..PI` にラッピングする
 - `cos(centerLat)` は CPU 側で事前計算し uniform で渡す（GPU 上での不必要な再計算を避ける）
-- CPU側の `projectLonLatToWorld()` と GPU側のこの関数は同じ数式を使い、GeojsonLayer と MovingEntitiesLayer の座標系を一致させる
+- `projectLonLatToWorld()` という別の CPU 関数は存在しない。CPU 側（GeojsonLayer のジオメトリ生成）と GPU 側（MovingEntitiesLayer の compute 実行）が**同一の `projectLonLatGPU` を共用**することで座標系を一致させる
 
 ---
 
@@ -377,6 +408,16 @@ const blend = clamp(
 
 const currentLon = mix(prevLon, lon, blend).toVar()
 const currentLat = mix(prevLat, lat, blend).toVar()
+
+// 補間結果を投影して位置バッファへ書き込む
+projectedPosition.assign(projectLonLatGPU(currentLon, currentLat, projUniforms, projUniforms.projectionType))
+
+// heading を観測バッファから読み、度→ラジアン変換して heading バッファへ出力
+const headingOut = headingNode.element(instanceIndex)
+const headingDeg = rawObservationNode
+  .element(baseIndex.add(int(OBSERVATION_OFFSET.heading)))
+  .toVar()
+headingOut.assign(headingDeg.mul(DEG2RAD))
 ```
 
 **要点:**
@@ -384,6 +425,7 @@ const currentLat = mix(prevLat, lat, blend).toVar()
 - `mix(a, b, t)` で経度・緯度を線形補間
 - `clamp(0, 1)` で範囲外を防止
 - 補間後にそのまま投影関数に渡す（補間 → 投影をワンパスで実行）
+- このパスは位置 (`positionNode`) に加えて **`headingNode`（進行方向, ラジアン）も出力**する。描画側 (§6) はこの heading を `cos`/`sin` で使い、三角形インスタンスの機首回転に利用する
 
 ---
 
@@ -447,67 +489,82 @@ if (!navigator.gpu) {
 
 ---
 
-## 16. drei の Html コンポーネントによる HUD オーバーレイ
+## 16. stats-gl による FPS 表示
 
-### 技術: 3Dシーン上に HTML DOM を重ねる
+### 技術: `stats-gl` の `Stats` パネルを `document.body` に直接追加する
+
+FPS 表示は drei の `Html` ではなく、`src/FpsStats.jsx` が `stats-gl` ライブラリの `Stats` を使って実装している。Canvas のシーングラフ外で、DOM に直接パネルを差し込む。
 
 ```jsx
-import { Html } from '@react-three/drei'
+import { useEffect } from 'react'
+import Stats from 'stats-gl'
 
-function PerformanceHud({ entityCount }) {
-  const [fps, setFps] = useState(0)
+function FpsStats() {
+  useEffect(() => {
+    const stats = new Stats({ trackGPU: false, trackCPU: false })
+    stats.dom.style.position = 'fixed'
+    stats.dom.style.top = '0px'
+    stats.dom.style.left = '0px'
+    stats.dom.style.zIndex = '9999'
+    document.body.appendChild(stats.dom)
 
-  useFrame((_, delta) => {
-    // 0.25秒ごとにFPSを再計算
-    sampleRef.current.frames += 1
-    sampleRef.current.elapsed += delta
-    if (sampleRef.current.elapsed >= 0.25) {
-      setFps(Math.round(sampleRef.current.frames / sampleRef.current.elapsed))
-      sampleRef.current.frames = 0
-      sampleRef.current.elapsed = 0
+    let raf
+    const loop = () => {
+      stats.update()
+      raf = requestAnimationFrame(loop)
     }
-  })
+    raf = requestAnimationFrame(loop)
 
-  return (
-    <Html prepend>
-      <div className='stats-panel'>
-        <span>{entityCount.toLocaleString()} entities</span>
-        <span>{fps} FPS</span>
-      </div>
-    </Html>
-  )
+    return () => {
+      cancelAnimationFrame(raf)
+      document.body.removeChild(stats.dom)
+    }
+  }, [])
+
+  return null
 }
 ```
 
 **要点:**
-- `<Html prepend>` は DOM 要素を Canvas の前面に配置する
-- `useFrame` で delta を積算し、サンプリング間隔を設けることで setState の呼び出し頻度を抑える
+- `stats-gl` の `Stats` インスタンスを生成し、`stats.dom` を `document.body` に append する（R3F の `<Canvas>` ツリーの外）
+- `requestAnimationFrame` ループで `stats.update()` を毎フレーム呼んで計測する
+- アンマウント時に `cancelAnimationFrame` と `removeChild` でクリーンアップする
+- `useFrame` や drei の `Html`、エンティティ数表示は使っていない
 
 ---
 
 ## 17. Vite のチャンク分割戦略
 
-### 技術: WebGPU 関連モジュールの優先度付きコード分割
+### 技術: WebGPU 関連モジュールの優先度付きコード分割（Rolldown）
+
+このプロジェクトの Vite (8 / Rolldown) では `build.rolldownOptions.output.codeSplitting.groups` でチャンク分割する。各グループは `{ name, test: /正規表現/, priority }` で定義し、`test` がモジュール ID にマッチするか、`priority` が高いものから割り当てられる。
 
 ```js
 // vite.config.js
-manualChunks(id) {
-  const priorities = [
-    { match: 'react-dom', name: 'react', priority: 30 },
-    { match: '@react-three/fiber', name: 'fiber', priority: 25 },
-    { match: '@react-three/drei', name: 'drei', priority: 24 },
-    { match: 'three/src/renderers/webgpu', name: 'webgpu-three', priority: 23 },
-    { match: 'three/src/nodes', name: 'tsl-nodes', priority: 22 },
-    { match: 'three', name: 'three-core', priority: 20 },
-    { match: 'node_modules', name: 'vendor', priority: 10 },
-  ]
+build: {
+  chunkSizeWarningLimit: 1000,
+  rolldownOptions: {
+    output: {
+      codeSplitting: {
+        groups: [
+          { name: 'react',       test: /node_modules[\\/](react|react-dom|scheduler)[\\/]/, priority: 30 },
+          { name: 'fiber',       test: /node_modules[\\/]@react-three[\\/]fiber[\\/]/,       priority: 25 },
+          { name: 'drei',        test: /node_modules[\\/]@react-three[\\/]drei[\\/]/,        priority: 24 },
+          { name: 'three-webgpu', test: /node_modules[\\/]three[\\/](src[\\/]renderers[\\/]webgpu|build[\\/]three\.webgpu)/, priority: 23 },
+          { name: 'three-tsl',   test: /node_modules[\\/]three[\\/](src[\\/]nodes|build[\\/]three\.tsl)/, priority: 22 },
+          { name: 'three-core',  test: /node_modules[\\/]three[\\/]/,                        priority: 20 },
+          { name: 'vendor',      test: /node_modules[\\/]/,                                  priority: 10 },
+        ],
+      },
+    },
+  },
 }
 ```
 
 **要点:**
-- Three.js の WebGPU レンダラーと TSL ノードシステムを独立チャンクに分離
-- 優先度マッチングにより、`three/src/renderers/webgpu` が `three` より先にマッチする
-- WebGPU 対応ブラウザでのみ必要なコードを遅延ロード可能にする設計
+- Rollup の `manualChunks(id)` 関数ではなく、Rolldown の `codeSplitting.groups`（宣言的な `{ name, test, priority }` 配列）を使う
+- `test` は文字列マッチではなく**正規表現**。`priority` が高いグループから順に判定される
+- Three.js の WebGPU レンダラー (`three-webgpu`) と TSL ノードシステム (`three-tsl`) を独立チャンクに分離。priority により `three-core` (20) より先にマッチする
 
 ---
 
@@ -517,9 +574,9 @@ manualChunks(id) {
 ┌─────────────────────────────────────────────────────┐
 │  React Layer                                         │
 │  ┌─────────┐  ┌──────────────┐  ┌────────────────┐  │
-│  │ App.jsx │  │ Scene.jsx    │  │ Html (drei)    │  │
-│  │ Canvas  │  │ OrbitControls│  │ PerformanceHud │  │
-│  │ gl=async│  │ useFrame     │  │                │  │
+│  │ App.jsx │  │ Scene.jsx    │  │ FpsStats.jsx   │  │
+│  │ Canvas  │  │ OrbitControls│  │ stats-gl Stats │  │
+│  │ gl=async│  │ useFrame     │  │ → document.body│  │
 │  └────┬────┘  └──────┬───────┘  └────────────────┘  │
 │       │              │                               │
 │  ┌────▼──────────────▼───────────────────────────┐   │
@@ -538,7 +595,8 @@ manualChunks(id) {
 │  │ Pass          │  │ Pass                       │   │
 │  │               │  │                            │   │
 │  │ lon/lat →     │  │ prev ──mix(blend)──→ curr  │   │
-│  │ equirectangular│ │ curr ──project──→ world    │   │
+│  │ projectLonLat │  │ curr ──project──→ world    │   │
+│  │ GPU(4図法)    │  │ heading ──→ headingNode    │   │
 │  │ → world xyz   │  │                            │   │
 │  └───────┬───────┘  └─────────────┬──────────────┘   │
 │          │                        │                   │
@@ -555,9 +613,9 @@ manualChunks(id) {
 │  ┌────────────────────────────────▼──────────────┐   │
 │  │  Render (zero-copy from compute output)       │   │
 │  │  MeshBasicNodeMaterial                        │   │
-│  │    .vertexNode = billboarding(positionNode)   │   │
-│  │    .opacityNode = shapeCircle()               │   │
-│  │  InstancedMesh (up to 1M instances)           │   │
+│  │    .positionNode = rotate(triangle, heading)  │   │
+│  │                    + positionNode             │   │
+│  │  InstancedMesh of 三角形 BufferGeometry        │   │
 │  └───────────────────────────────────────────────┘   │
 └──────────────────────────────────────────────────────┘
 ```

@@ -28,8 +28,12 @@ TerrainLayer が `onHeightData` で返すオブジェクト。
 
 1. GeoTIFF を読み込み、NODATA 値を 0 に置換
 2. ガウシアンブラー適用（`smooth` パラメータ）
-3. 標高値を正規化（最大高さ = `targetHeight × heightScale`）
-4. GeoTIFF の座標系（北→南、西→東）を反転して Three.js 座標系に合わせる
+3. ブラー済み DEM から min/max を算出し、標高レンジ `elevRange = maxElev - minElev` を求める。実装には用途の異なる 2 系統の変換がある:
+   - `getNormElev` — `(blurred - minElev) / elevRange` で 0〜1 に正規化。頂点カラー用の `aElevation` 属性に使用
+   - `getElev` — `blurred × elevToWorld`（`elevToWorld = (targetHeight / elevRange) × heightScale`）でワールド高さに変換。上面ジオメトリの Y 座標と、衝突判定用の `heightBuffer` に使用
+   - つまり標高レンジ（max − min）が `targetHeight × heightScale` にマップされる。`minElev` が 0 でない限り最大高さ ≠ `targetHeight × heightScale`
+   - **衝突判定に渡されるのは正規化値ではなく `getElev` のワールド高さ**（`heights` バッファ）である点に注意
+4. GeoTIFF の座標系を反転して Three.js 座標系に合わせる。`getElev` / `getNormElev` ともに `demRow = rows-1-row`、`demCol = cols-1-col` で**行・列の両軸を反転**する。衝突用 `heightBuffer` も同じ `getElev` ロジックで生成するため、上面ジオメトリと完全に一致する
 
 ## GPU Compute の構成
 

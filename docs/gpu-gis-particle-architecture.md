@@ -94,12 +94,21 @@ const OBSERVATION_OFFSET = {
 3. 経度方向に `cos(centerLat)` を掛けて高緯度での歪みを補正する
 4. ワールドスケールを掛けて画面座標にする
 
+本リポジトリでは投影関数を `projectLonLatGPU(lonNode, latNode, uniforms, projectionType)` として `src/gis/projectionGPU.js` に実装している。中心座標・スケール等の個別 uniform は `uniforms` オブジェクトにまとめて渡し、`projectionType` で図法を切り替える設計とした。引数を 1 つずつ並べるのではなくオブジェクトで束ねることで、図法ごとに必要な uniform が異なっても呼び出し側のシグネチャを統一できる。
+
 ```js
-function createProjectedNode(lonNode, latNode, worldScaleNode, centerLonNode, centerLatNode, cosCenterLatNode) {
-  const lambda = lonNode.sub(centerLonNode).mul(DEG2RAD).toVar()
-  const phi = latNode.sub(centerLatNode).mul(DEG2RAD).toVar()
-  const wrappedPositive = select(lambda.greaterThan(float(PI)), lambda.sub(float(TAU)), lambda).toVar()
-  const wrappedLambda = select(wrappedPositive.lessThan(float(-PI)), wrappedPositive.add(float(TAU)), wrappedPositive).toVar()
+export function projectLonLatGPU(lonNode, latNode, uniforms, projectionType = 'equirectangular') {
+  const { wrappedLambda, phi } = wrapLambdaAndPhi(lonNode, latNode, uniforms)
+  const projectionFn = PROJECTIONS[projectionType] ?? equirectangularProjection
+  return projectionFn(wrappedLambda, phi, uniforms)
+}
+```
+
+経度ラッピングと度→ラジアン変換を担う `wrapLambdaAndPhi` は全図法で共通し、図法固有の式は `PROJECTIONS` テーブルから引いた関数が担当する。等距円筒図法の本体は次のとおり。
+
+```js
+function equirectangularProjection(wrappedLambda, phi, uniforms) {
+  const { worldScaleNode, cosCenterLatNode } = uniforms
   return vec3(
     wrappedLambda.mul(cosCenterLatNode).mul(worldScaleNode),
     phi.mul(worldScaleNode),
@@ -119,6 +128,10 @@ function createProjectedNode(lonNode, latNode, worldScaleNode, centerLonNode, ce
 ### CPU/GPU 投影の数式統一
 
 ピッキング（マウス座標 → 地理座標の逆変換）やデバッグ表示で CPU 側にも投影関数が必要になることがある。このとき、CPU 側と GPU 側で同じ数式を使うことが重要である。数式が乖離すると、「CPU で計算した座標と GPU の描画位置がずれる」という追跡困難なバグが発生する。
+
+### 複数図法への拡張
+
+実装では等距円筒図法に限らず、`PROJECTIONS` テーブルで複数の図法を切り替えられるようにしている。現状は equirectangular / mercator / lambert-cylindrical / natural-earth の 4 種を登録し、`projectLonLatGPU` の `projectionType` 引数で選択する。図法ごとの差異は y 座標（緯度方向）の式に集約され、経度ラッピング・度→ラジアン変換・日付変更線処理は `wrapLambdaAndPhi` として共通化している。新たな図法を追加する場合も、`(wrappedLambda, phi, uniforms) => vec3(...)` という同一シグネチャの関数を 1 つ書いてテーブルに登録するだけでよく、呼び出し側や補間パスには変更が波及しない。
 
 ---
 
@@ -154,6 +167,10 @@ const currentLat = mix(prevLat, lat, blend).toVar()
 
 補間で得た `currentLon / currentLat` をそのまま投影関数に渡すことで、「補間 → 投影」を 1 回の compute dispatch で完了できる。中間結果を一度バッファに書き戻して再読み込みする必要がないため、メモリ帯域を節約できる。
 
+### heading の同時出力
+
+実装の Interpolation Pass は、補間済みワールド座標を書き込む position バッファに加えて、`heading`（機首・船首方向）を度からラジアンへ変換した値を専用バッファへ出力する。これは描画時に各インスタンスを進行方向へ回転させるために使う。`MovingEntitiesLayer.jsx` の頂点シェーダーがこの heading バッファを読み、`cos/sin` でビルボードを回転させてから投影位置へ配置する。position と heading を同一 compute pass で出力することで、補間と向き計算を 1 回の dispatch にまとめている。
+
 ---
 
 ## 5. Projection Pass と Interpolation Pass の分離設計
@@ -171,6 +188,8 @@ const currentLat = mix(prevLat, lat, blend).toVar()
 - 日付変更線ラッピングを適用する
 - ワールド座標を出力する
 
+> 補足: `createProjectionPass` は実装済みだが、現状どのレイヤーからも参照されていない。移動を伴わない静的点群を投影する選択肢として用意してあるが、現行の lookdev 環境では移動体の描画に Interpolation Pass のみを使っているため未配線である。静的点群を描画する場面が出てきた段階で配線する想定。
+
 ### Interpolation Pass
 
 移動体の補間と投影を 1 パスで実行する pass。
@@ -181,6 +200,9 @@ const currentLat = mix(prevLat, lat, blend).toVar()
 - 再生時刻に基づくブレンド率を計算する
 - 経度・緯度を線形補間する
 - 補間後の座標を投影してワールド座標を出力する
+- あわせて `heading` を度→ラジアンへ変換し、向き用バッファへ出力する
+
+なお、本リポジトリで実際に移動体描画に使われているのはこの Interpolation Pass である（`MovingEntitiesLayer.jsx` が利用）。
 
 ### 選択指針
 
@@ -204,6 +226,8 @@ const lat = rawObservationNode.element(baseIndex.add(int(OBSERVATION_OFFSET.lat)
 ## 6. 実データへの拡張パターン
 
 ### CPU 側パッキング戦略
+
+> 注記: 以下の `packObservationBuffer(rows)` は、実データ導入時に行データを stride バッファへ詰め替えるための **将来の拡張パターン** を示す例であり、現状のリポジトリには存在しない。現行の実装は `src/data/mockObservations.js` の `createMockObservationBuffer(entityCount)` であり、行データの詰め替えではなく手続き的に観測値を生成している。本節は実データ導入時に置き換える想定の設計指針として読まれたい。
 
 実データ導入時の CPU 側処理は、次の 2 段階に分離する。
 
