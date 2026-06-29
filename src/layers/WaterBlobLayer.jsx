@@ -318,8 +318,6 @@ function createWaterBlobMaterial(environmentMap, { width, height, depth }) {
     envMapIntensity: MATERIAL.envMapIntensity,
   })
 
-  const halfD = depth * 0.5
-
   // positionNode で blob 形状に変形
   material.positionNode = createBlobPositionNode(width, height, depth)
 
@@ -480,7 +478,7 @@ function WaterBlobLayer({
   )
 }
 
-function WaterBlobMesh({ environmentMap, width, height, depth, position }) {
+function WaterBlobMesh({ environmentMap, width, height, depth }) {
   const blobMaterial = useMemo(
     () => createWaterBlobMaterial(environmentMap, { width, height, depth }),
     [environmentMap, width, height, depth]

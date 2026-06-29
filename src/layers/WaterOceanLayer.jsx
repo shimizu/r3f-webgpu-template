@@ -138,7 +138,6 @@ function createWaterBoxMaterial(waterNormalsTexture, opacity) {
   // --- 面の判定 ---
   // normalLocal.y ≈ 1 → 上面、≈ 0 → 側面、≈ -1 → 底面
   const topMask = smoothstep(float(SURFACE.topMaskMin), float(SURFACE.topMaskMax), normalLocal.y)
-  const sideMask = normalLocal.y.abs().oneMinus().smoothstep(float(SURFACE.sideMaskMin), float(SURFACE.sideMaskMax))
 
   // --- 上面: ノーマルマップスクロールによる波 ---
   const uvCoord = uv()

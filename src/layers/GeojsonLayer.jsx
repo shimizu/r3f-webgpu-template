@@ -1,4 +1,4 @@
-/* eslint-disable react/no-unknown-property, react/prop-types */
+ 
 import { useEffect, useMemo, useState } from 'react'
 import { BufferGeometry, Color, Float32BufferAttribute } from 'three'
 import { LineBasicNodeMaterial, MeshBasicNodeMaterial, PointsNodeMaterial } from 'three/webgpu'

@@ -403,7 +403,7 @@ function WaterBoxLayer({
   )
 }
 
-function WaterBoxMesh({ environmentMap, width, height, depth, position, segments }) {
+function WaterBoxMesh({ environmentMap, width, height, depth, segments }) {
   const bodyMaterial = useMemo(
     () => createWaterBodyMaterial(environmentMap, { width, height, depth }),
     [environmentMap, width, height, depth]

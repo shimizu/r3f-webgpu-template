@@ -1,4 +1,4 @@
-import { cos, float, log, select, sin, tan, vec3 } from 'three/tsl'
+import { float, log, select, sin, tan, vec3 } from 'three/tsl'
 
 const DEG2RAD = Math.PI / 180
 const PI = Math.PI

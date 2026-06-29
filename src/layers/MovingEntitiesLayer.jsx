@@ -1,4 +1,4 @@
-/* eslint-disable react/no-unknown-property, react/prop-types */
+ 
 import { useEffect, useMemo, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import { BufferGeometry, Color, DoubleSide, Float32BufferAttribute, InstancedMesh, Matrix4 } from 'three'

@@ -1,4 +1,4 @@
-/* eslint-disable react/no-unknown-property, react/prop-types */
+ 
 import { useMemo } from 'react'
 import { PlaneGeometry } from 'three'
 import { MeshPhysicalNodeMaterial } from 'three/webgpu'

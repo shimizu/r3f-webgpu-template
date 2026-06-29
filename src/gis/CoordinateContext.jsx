@@ -1,4 +1,4 @@
-/* eslint-disable react/no-unknown-property, react/prop-types */
+ 
 import { createContext, useContext, useMemo } from 'react'
 import { createProjectionUniforms } from './projectionUniforms'
 
