@@ -40,13 +40,20 @@ function getEntityColor(rawObservationBuffer, index) {
  * 3. 補間された地理座標（lon/lat）をそのまま GPU 上でワールド座標へ投影。
  * 4. InstancedMesh を使用し、頂点シェーダー内で各インスタンスの位置を更新して描画。
  */
-function MovingEntitiesLayer({ entityCount }) {
+// region: モック観測データの生成域（createMockObservationBuffer に渡す bbox）。
+//   useMemo の依存になるため、inline オブジェクトではなく安定した参照（定数等）で渡すこと
+// altitude: 投影面からの浮かせ量（投影フレームの +Z）。GeojsonLayer の altitude と同じ意味で、
+//   地形など高さのあるレイヤーの上に移動体を出したい場合に指定する
+function MovingEntitiesLayer({ entityCount, region = null, altitude = 0 }) {
   const { view } = useProjection()
   const renderer = useThree((state) => state.gl)
   const systemRef = useRef(null)
-  
+
   // モックデータの生成
-  const dataset = useMemo(() => createMockObservationBuffer(entityCount), [entityCount])
+  const dataset = useMemo(
+    () => createMockObservationBuffer(entityCount, region),
+    [entityCount, region]
+  )
 
   // GPU リソースとマテリアルの初期化
   const { resourceError, resources } = useMemo(() => {
@@ -99,7 +106,7 @@ function MovingEntitiesLayer({ entityCount }) {
       material.positionNode = vec3(
         rotatedX.add(rawPos.x),
         rotatedY.add(rawPos.y),
-        float(0)
+        float(altitude)
       )
       mesh.frustumCulled = false // 常に描画
 
@@ -116,7 +123,7 @@ function MovingEntitiesLayer({ entityCount }) {
         resources: null,
       }
     }
-  }, [dataset, view])
+  }, [dataset, view, altitude])
 
   // レンダラーへの Compute Pass 登録とクリーンアップ
   useEffect(() => {

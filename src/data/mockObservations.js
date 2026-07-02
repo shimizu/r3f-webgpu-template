@@ -10,17 +10,36 @@ function hash01(value) {
   return x - Math.floor(x)
 }
 
-export function createMockObservationBuffer(entityCount) {
+/**
+ * 開発用のモック観測バッファを生成する。
+ *
+ * @param {number} entityCount - 生成するエンティティ数
+ * @param {Object|null} region - 生成域。指定するとその bbox 内に散らばるローカルデータになる。
+ *   { lonMin, lonMax, latMin, latMax, lonDrift = -2 }（lonDrift: 負で西進、単位は度）
+ *   省略時は日付変更線またぎの全球テストデータ（lon -170 → 170 西進）
+ */
+export function createMockObservationBuffer(entityCount, region = null) {
   const rawObservationBuffer = new Float32Array(entityCount * OBSERVATION_STRIDE)
 
   for (let index = 0; index < entityCount; index += 1) {
     const baseIndex = index * OBSERVATION_STRIDE
     const isAircraft = index % 9 === 0
-    // テスト用: 全エンティティが lon -170 → 170 へ日付変更線をまたいで西進する
-    // （補間パスの Δlon ±180° 正規化により、0° 経由ではなく 180° 経由の最短経路になる）
-    const latBase = -90 + hash01(index * 0.17 + 2.1) * 180
-    const prevLon = -170
-    const lon = 170
+
+    let prevLon
+    let lon
+    let latBase
+    if (region) {
+      // region 内に一様分布させ、lonDrift 度だけ移動させる
+      prevLon = region.lonMin + hash01(index * 0.31 + 1.7) * (region.lonMax - region.lonMin)
+      lon = prevLon + (region.lonDrift ?? -2)
+      latBase = region.latMin + hash01(index * 0.17 + 2.1) * (region.latMax - region.latMin)
+    } else {
+      // テスト用: 全エンティティが lon -170 → 170 へ日付変更線をまたいで西進する
+      // （補間パスの Δlon ±180° 正規化により、0° 経由ではなく 180° 経由の最短経路になる）
+      prevLon = -170
+      lon = 170
+      latBase = -90 + hash01(index * 0.17 + 2.1) * 180
+    }
     const prevLat = latBase
     const lat = latBase
     const alt = isAircraft ? 2800 + hash01(index * 0.43 + 4.2) * 9000 : 0

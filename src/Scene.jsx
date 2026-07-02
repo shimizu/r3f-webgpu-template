@@ -16,10 +16,19 @@ import WaterOceanLayer from './layers/WaterOceanLayer'
 import Coordinate from './gis/CoordinateContext'
 import { HORMUZ_VIEW } from './gis/views'
 import GeojsonLayer from './layers/GeojsonLayer'
-// eslint-disable-next-line no-unused-vars
 import MovingEntitiesLayer from './layers/MovingEntitiesLayer'
 import TerrainLayer from './layers/TerrainLayer'
 import Labels3DLayer from './layers/Labels3DLayer'
+
+// 移動体モックの生成域（hormuz.tif の bbox 45.85〜65.19 / 21.90〜32.12 の内側）。
+// MovingEntitiesLayer の useMemo 依存になるため、inline ではなく定数で渡す
+const ENTITY_REGION = {
+  lonMin: 47,
+  lonMax: 64,
+  latMin: 22.5,
+  latMax: 31.5,
+  lonDrift: -3,
+}
 
 /**
  * シーン全体の構成を定義するコンポーネント。
@@ -29,7 +38,6 @@ import Labels3DLayer from './layers/Labels3DLayer'
  * 2. GIS コンテキスト（Coordinate）を構築し、地理座標系を 3D 空間に投影。
  * 3. 投影された空間内に地図（GeoJSON）や移動体（MovingEntities）を描画。
  */
-// eslint-disable-next-line no-unused-vars
 function Scene({ entityCount = 2000 }) {
   // eslint-disable-next-line no-unused-vars
   const [heightInfo, setHeightInfo] = useState(null)
@@ -69,7 +77,14 @@ function Scene({ entityCount = 2000 }) {
           seaLevel={0.19}
         />
         <GeojsonLayer url='./data/world.geojson' altitude={1.65} />
+        {/* 移動体はホルムズ域内で生成し、地形より上（altitude）に浮かせる */}
+        <MovingEntitiesLayer
+          entityCount={entityCount}
+          region={ENTITY_REGION}
+          altitude={1.7}
+        />
       </Coordinate>
+
 
       {/* 海面レイヤー（投影後の地形フットプリント 21.38 × 12.68 に合わせる） */}
       {showOcean && (
