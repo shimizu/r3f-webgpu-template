@@ -13,11 +13,8 @@ import WaterBlobLayer from './layers/WaterBlobLayer'
 // eslint-disable-next-line no-unused-vars
 import WaterBoxLayer from './layers/WaterBoxLayer'
 import WaterOceanLayer from './layers/WaterOceanLayer'
-// eslint-disable-next-line no-unused-vars
 import Coordinate from './gis/CoordinateContext'
-// eslint-disable-next-line no-unused-vars
-import { WORLD_VIEW } from './gis/views'
-// eslint-disable-next-line no-unused-vars
+import { HORMUZ_VIEW } from './gis/views'
 import GeojsonLayer from './layers/GeojsonLayer'
 // eslint-disable-next-line no-unused-vars
 import MovingEntitiesLayer from './layers/MovingEntitiesLayer'
@@ -62,22 +59,23 @@ function Scene({ entityCount = 2000 }) {
       {/* 青いグリッドレイヤー */}
       <GridLayer position={[0, -1, 0]} />
 
-      {/* DEM 地形レイヤー */}
-      <TerrainLayer
-        url="./dem/hormuz.tif"
-        size={24}
-        smooth={1.25}
-        heightScale={0.5}
-        baseHeight={1.5}
-        seaLevel={0.19}
-        position={[0, 0.5, 0]}
-      />
+      {/* GIS: DEM 地形 + GeoJSON を同一投影コンテキストで自動整合 */}
+      <Coordinate projection="equirectangular" view={HORMUZ_VIEW} position={[0, 0.5, 0]}>
+        <TerrainLayer
+          url="./dem/hormuz.tif"
+          smooth={1.25}
+          heightScale={0.5}
+          baseHeight={1.5}
+          seaLevel={0.19}
+        />
+        <GeojsonLayer url='./data/world.geojson' altitude={1.65} />
+      </Coordinate>
 
-      {/* 海面レイヤー */}
+      {/* 海面レイヤー（投影後の地形フットプリント 21.38 × 12.68 に合わせる） */}
       {showOcean && (
         <WaterOceanLayer
-          width={23.9}
-          height={12.5}
+          width={21.3}
+          height={12.6}
           depth={1}
           opacity={0.85}
           position={[0, 0.5, 0]}

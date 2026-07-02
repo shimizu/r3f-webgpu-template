@@ -193,7 +193,9 @@ function buildFillGeometry(geojson, view) {
  * 2. 生成された頂点（lon/lat/0）を BufferGeometry に格納。
  * 3. 描画時に GPU (TSL) で lon/lat を指定の図法（等距円筒図法など）へ変換する。
  */
-function GeojsonLayer({ url }) {
+// altitude: 投影面からの浮かせ量（投影フレームの +Z = 回転後の world +Y）。
+// 地形など高さのあるレイヤーの上に線を出したい場合に指定する
+function GeojsonLayer({ url, altitude = Z_OFFSET }) {
   const { view, projUniforms, projectionType } = useProjection()
   const [geojson, setGeojson] = useState(null)
 
@@ -290,7 +292,7 @@ function GeojsonLayer({ url }) {
   }
 
   return (
-    <group position={[0, 0, Z_OFFSET]}>
+    <group position={[0, 0, altitude]}>
       <mesh geometry={fillGeometry} material={fillMaterial} />
       <lineSegments geometry={lineGeometry} material={lineMaterial} />
       <points geometry={pointGeometry} material={pointMaterial} />

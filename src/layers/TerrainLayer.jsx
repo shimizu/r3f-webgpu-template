@@ -12,6 +12,9 @@ import {
 } from 'three/tsl'
 import { fromArrayBuffer } from 'geotiff'
 
+import { useProjectionMaybe } from '../gis/CoordinateContext'
+import { projectLonLatCPU } from '../gis/projectionCPU'
+
 const DEFAULT_SIZE = 16            // 基準幅（奥行は DEM アスペクト比から自動算出）
 const DEFAULT_HEIGHT_RANGE = 4     // 標高レンジ
 const MAX_DEM_SIZE = 512          // これを超える場合は縮小読み込み
@@ -127,12 +130,15 @@ function gaussianBlur(data, width, height, radius) {
 }
 
 // 上面・側面・底面を持つ地形ジオメトリを構築
-function buildTerrainGeometry(demData, { terrainWidth, targetHeight, smooth, heightScale: hScale, baseHeight }) {
-  const { values, width, height, nodata } = demData
+// projection ({centerLon, centerLat, worldScale, projectionType}) を渡すと投影モード:
+// bbox から頂点ごとに lon/lat を CPU 投影して焼き込み、GPU 投影レイヤー（GeojsonLayer 等）と整合する
+function buildTerrainGeometry(demData, { terrainWidth, targetHeight, smooth, heightScale: hScale, baseHeight, projection }) {
+  const { values, width, height, nodata, bbox } = demData
   const cols = width
   const rows = height
+  const projected = !!(projection && bbox)
 
-  // DEM のアスペクト比を保持: 基準幅から奥行を自動算出
+  // DEM のアスペクト比を保持: 基準幅から奥行を自動算出（legacy モード用）
   const terrainDepth = terrainWidth * (rows / cols)
   const baseY = -baseHeight
 
@@ -156,17 +162,19 @@ function buildTerrainGeometry(demData, { terrainWidth, targetHeight, smooth, hei
   const elevRange = maxElev - minElev || 1
   const elevToWorld = (targetHeight / elevRange) * hScale
 
-  // ブラー済み DEM から標高値を取得 (行反転: GeoTIFF は北→南)
+  // ブラー済み DEM の配列インデックス。
+  // projected: bbox から lon/lat を直接割り当てるため反転しない（GeoTIFF 行0=北）
+  // legacy: 行・列とも反転（=180°回転。旧 Scene の rotation.z=-π と対で成立していた歴史的配置）
+  const demIndex = projected
+    ? (col, row) => row * cols + col
+    : (col, row) => (rows - 1 - row) * cols + (cols - 1 - col)
+
   function getElev(col, row) {
-    const demRow = rows - 1 - row
-    const demCol = cols - 1 - col
-    return blurred[demRow * cols + demCol] * elevToWorld
+    return blurred[demIndex(col, row)] * elevToWorld
   }
 
   function getNormElev(col, row) {
-    const demRow = rows - 1 - row
-    const demCol = cols - 1 - col
-    return (blurred[demRow * cols + demCol] - minElev) / elevRange
+    return (blurred[demIndex(col, row)] - minElev) / elevRange
   }
 
   // --- 上面 ---
@@ -181,15 +189,47 @@ function buildTerrainGeometry(demData, { terrainWidth, targetHeight, smooth, hei
   const halfW = terrainWidth / 2
   const halfD = terrainDepth / 2
 
+  // 頂点の水平座標 (X, Z)。col↑→X↑, row↑→Z↑ の単調性は両モード共通なので
+  // 上面インデックス・側面ワインディングはそのまま流用できる。
+  // projected: 投影 XY 平面（y=北+）を Y-up に読み替えるため Z = -投影y（北=-Z=画面奥）
+  let posAt
+  if (projected) {
+    const [minLon, minLat, maxLon, maxLat] = bbox
+    const lonAt = (col) => minLon + (col / (cols - 1)) * (maxLon - minLon)
+    const latAt = (row) => maxLat - (row / (rows - 1)) * (maxLat - minLat) // 行0=北
+    posAt = (col, row) => {
+      const [px, py] = projectLonLatCPU(lonAt(col), latAt(row), projection)
+      return [px, -py]
+    }
+  } else {
+    posAt = (col, row) => [col * stepX - halfW, row * stepZ - halfD]
+  }
+
+  let minX = Infinity
+  let maxX = -Infinity
+  let minZ = Infinity
+  let maxZ = -Infinity
+
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols; col++) {
       const vi = row * cols + col
-      topPositions[vi * 3] = col * stepX - halfW
+      const [x, z] = posAt(col, row)
+      topPositions[vi * 3] = x
       topPositions[vi * 3 + 1] = getElev(col, row)
-      topPositions[vi * 3 + 2] = row * stepZ - halfD
+      topPositions[vi * 3 + 2] = z
+      if (x < minX) minX = x
+      if (x > maxX) maxX = x
+      if (z < minZ) minZ = z
+      if (z > maxZ) maxZ = z
       topNormElevs[vi] = getNormElev(col, row)
-      topUvs[vi * 2] = 1 - col / (cols - 1)
-      topUvs[vi * 2 + 1] = row / (rows - 1)
+      if (projected) {
+        // flipY=true 前提: 画像先頭行（北）= v1
+        topUvs[vi * 2] = col / (cols - 1)
+        topUvs[vi * 2 + 1] = 1 - row / (rows - 1)
+      } else {
+        topUvs[vi * 2] = 1 - col / (cols - 1)
+        topUvs[vi * 2 + 1] = row / (rows - 1)
+      }
     }
   }
 
@@ -243,8 +283,7 @@ function buildTerrainGeometry(demData, { terrainWidth, targetHeight, smooth, hei
 
   for (let i = 0; i < perimeterPoints.length; i++) {
     const { col, row } = perimeterPoints[i]
-    const x = col * stepX - halfW
-    const z = row * stepZ - halfD
+    const [x, z] = posAt(col, row)
     const elev = getElev(col, row)
 
     // 上端頂点
@@ -286,12 +325,14 @@ function buildTerrainGeometry(demData, { terrainWidth, targetHeight, smooth, hei
   }
 
   // --- 底面 ---
-  // 4頂点の単純な平面
+  // 上面 XZ 範囲の4隅矩形（legacy では ±halfW/±halfD と一致）。
+  // cylindrical 系図法ではグリッド外縁と厳密一致。natural-earth のみ外縁が
+  // 湾曲するため僅かに不一致だが、baseY 下で実質不可視
   const bottomPositions = new Float32Array([
-    -halfW, baseY, -halfD,
-    halfW, baseY, -halfD,
-    halfW, baseY, halfD,
-    -halfW, baseY, halfD,
+    minX, baseY, minZ,
+    maxX, baseY, minZ,
+    maxX, baseY, maxZ,
+    minX, baseY, maxZ,
   ])
   const bottomNormElevs = new Float32Array(4)
   const bottomSideMask = new Float32Array([1, 1, 1, 1])
@@ -360,16 +401,25 @@ function buildTerrainGeometry(demData, { terrainWidth, targetHeight, smooth, hei
     }
   }
 
+  // terrainWidth/Depth は実際の XZ スパンを返す（projected では投影後サイズ）。
+  // 注意: mercator / natural-earth では格子が非等間隔になるため、
+  // 規則格子前提の衝突ルックアップ（RainLayer）は近似になる
   return {
     geometry,
-    heightInfo: { heights: heightBuffer, cols, rows, terrainWidth, terrainDepth },
+    heightInfo: {
+      heights: heightBuffer,
+      cols,
+      rows,
+      terrainWidth: maxX - minX,
+      terrainDepth: maxZ - minZ,
+    },
   }
 }
 
 function TerrainLayer({
   url,
   texture: texturePath = null,
-  size = DEFAULT_SIZE,
+  size,
   heightRange = DEFAULT_HEIGHT_RANGE,
   elevationStops = ELEVATION_STOPS,
   colors = DEFAULT_COLORS,
@@ -382,6 +432,19 @@ function TerrainLayer({
 }) {
   const [demData, setDemData] = useState(null)
   const [texMap, setTexMap] = useState(null)
+
+  // <Coordinate> 配下なら投影モード（bbox + view から位置・スケールを自動決定）
+  const proj = useProjectionMaybe()
+  const projected = !!(proj && demData?.bbox)
+
+  useEffect(() => {
+    if (proj && demData && !demData.bbox) {
+      console.warn('TerrainLayer: GeoTIFF に地理参照がないため legacy グリッドで描画します')
+    }
+    if (proj && size != null) {
+      console.warn('TerrainLayer: 投影モードでは size は無視されます（view.worldScale がサイズを決定）')
+    }
+  }, [proj, demData, size])
 
   useEffect(() => {
     if (!texturePath) { setTexMap(null); return }
@@ -412,6 +475,13 @@ function TerrainLayer({
       const fullWidth = image.getWidth()
       const fullHeight = image.getHeight()
       const nodata = image.getGDALNoData()
+
+      let bbox = null
+      try {
+        bbox = image.getBoundingBox() // [minLon, minLat, maxLon, maxLat]
+      } catch {
+        // 地理参照のない TIFF は bbox なし（legacy モード扱い）
+      }
 
       let rasters, width, height
 
@@ -454,6 +524,7 @@ function TerrainLayer({
           width,
           height,
           nodata: nodata ?? DEFAULT_NODATA,
+          bbox,
         })
       }
     }
@@ -462,16 +533,19 @@ function TerrainLayer({
     return () => { ignore = true }
   }, [url])
 
+  // 投影は CPU 焼き込みのため projUniforms.update() による動的 view 変更には追従しない
+  // （view オブジェクトの差し替えなら再ビルドされる）
   const { geometry, heightInfo } = useMemo(() => {
     if (!demData) return { geometry: null, heightInfo: null }
     return buildTerrainGeometry(demData, {
-      terrainWidth: size,
+      terrainWidth: size ?? DEFAULT_SIZE,
       targetHeight: heightRange,
       smooth,
       heightScale,
       baseHeight,
+      projection: proj && demData.bbox ? proj.view : null,
     })
-  }, [demData, size, heightRange, smooth, heightScale, baseHeight])
+  }, [demData, size, heightRange, smooth, heightScale, baseHeight, proj])
 
   useEffect(() => {
     if (heightInfo && onHeightData) onHeightData(heightInfo)
@@ -492,6 +566,22 @@ function TerrainLayer({
   }
 
   if (!geometry) return null
+
+  if (projected) {
+    // ジオメトリは Y-up・world 向きで焼き込み済みなので、
+    // Coordinate のデフォルト回転（X=-π/2）を counter-rotation で相殺する
+    return (
+      <group rotation={[Math.PI / 2, 0, 0]}>
+        <mesh
+          geometry={geometry}
+          material={material}
+          position={position}
+          receiveShadow
+          castShadow
+        />
+      </group>
+    )
+  }
 
   return (
     <mesh
