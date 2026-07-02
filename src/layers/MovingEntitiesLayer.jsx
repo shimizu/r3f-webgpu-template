@@ -148,6 +148,12 @@ function MovingEntitiesLayer({ entityCount, region = null, altitude = 0 }) {
     }
   }, [renderer, resources])
 
+  // update に渡すオプションは毎フレーム生成せず、view 変更時のみ作り直す（GC 対策）
+  const updateOptions = useMemo(
+    () => ({ ...view, loopDuration: LOOP_DURATION }),
+    [view]
+  )
+
   // 毎フレームの更新処理
   useFrame((state) => {
     const system = systemRef.current
@@ -155,12 +161,9 @@ function MovingEntitiesLayer({ entityCount, region = null, altitude = 0 }) {
 
     // ループ再生時刻の計算
     const playbackTime = state.clock.elapsedTime % LOOP_DURATION
-    
+
     // GPU 側で補間と投影を再計算
-    system.update(renderer, playbackTime, {
-      ...view,
-      loopDuration: LOOP_DURATION,
-    })
+    system.update(renderer, playbackTime, updateOptions)
   })
 
   if (resourceError) {
