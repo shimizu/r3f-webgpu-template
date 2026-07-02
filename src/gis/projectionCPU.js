@@ -41,17 +41,27 @@ export function projectLonLatCPU(lon, lat, options) {
         (Math.sin(phi + phi0) - Math.sin(phi0)) * worldScale,
       ]
     case 'natural-earth': {
-      // GPU 実装同様、centerLat からの相対 φ に多項式を適用する
-      const phi2 = phi * phi
-      const phi4 = phi2 * phi2
-      const phi6 = phi4 * phi2
-      const phi8 = phi4 * phi4
-      const phi12 = phi6 * phi6
-      const xScale = 0.84719 - phi2 * 0.13063
-        + phi12 * (-0.04515 + phi2 * 0.05494 - phi4 * 0.02326 + phi6 * 0.00331)
-      const yScale = 1.01183
-        + phi8 * (-0.02625 + phi2 * 0.01926 - phi4 * 0.00396)
-      return [lambda * xScale * worldScale, phi * yScale * worldScale]
+      // GPU 実装同様、多項式は絶対緯度（φ + φ0）へ適用し、
+      // 中心緯度の Y を差し引いて recenter する（d3-geo-projection の naturalEarth2Raw と同係数）
+      const xScaleAt = (p) => {
+        const p2 = p * p
+        const p4 = p2 * p2
+        const p6 = p4 * p2
+        const p12 = p6 * p6
+        return 0.84719 - p2 * 0.13063
+          + p12 * (-0.04515 + p2 * 0.05494 - p4 * 0.02326 + p6 * 0.00331)
+      }
+      const yAt = (p) => {
+        const p2 = p * p
+        const p4 = p2 * p2
+        const p8 = p4 * p4
+        return p * (1.01183 + p8 * (-0.02625 + p2 * 0.01926 - p4 * 0.00396))
+      }
+      const phiAbs = phi + phi0
+      return [
+        lambda * xScaleAt(phiAbs) * worldScale,
+        (yAt(phiAbs) - yAt(phi0)) * worldScale,
+      ]
     }
     case 'equirectangular':
     default:

@@ -171,36 +171,47 @@ function lambertCylindricalProjection(wrappedLambda, phi, uniforms) {
   )
 }
 
-/** 
- * Natural Earth I 図法
- * 多項式ベースの疑似円筒図法。d3-geo-projection の実装に準拠。
+/**
+ * Natural Earth (II) 図法の多項式（d3-geo-projection の naturalEarth2Raw と同係数）。
+ * 与えた絶対緯度ノードに対して X 用スケールと Y 値を評価する
  */
-function naturalEarthProjection(wrappedLambda, phi, uniforms) {
-  const { worldScaleNode } = uniforms
-  const phi2 = phi.mul(phi)
+function naturalEarthPolynomials(phiNode) {
+  const phi2 = phiNode.mul(phiNode)
   const phi4 = phi2.mul(phi2)
   const phi6 = phi4.mul(phi2)
   const phi8 = phi4.mul(phi4)
   const phi12 = phi6.mul(phi6)
 
-  // 多項式近似による X 座標計算
   const xScale = float(0.84719)
     .sub(phi2.mul(0.13063))
     .add(phi12.mul(
       float(-0.04515).add(phi2.mul(0.05494)).sub(phi4.mul(0.02326)).add(phi6.mul(0.00331))
     ))
-  const x = wrappedLambda.mul(xScale)
-
-  // 多項式近似による Y 座標計算
-  const yScale = float(1.01183)
-    .add(phi8.mul(
+  const y = phiNode.mul(
+    float(1.01183).add(phi8.mul(
       float(-0.02625).add(phi2.mul(0.01926)).sub(phi4.mul(0.00396))
     ))
-  const y = phi.mul(yScale)
+  )
+
+  return { xScale, y }
+}
+
+/**
+ * Natural Earth (II) 図法
+ * 多項式ベースの疑似円筒図法。d3-geo-projection の実装に準拠し、
+ * 多項式は絶対緯度（φ + φ0）へ適用したうえで中心緯度の Y を差し引いて recenter する
+ */
+function naturalEarthProjection(wrappedLambda, phi, uniforms) {
+  const { worldScaleNode, centerLatNode } = uniforms
+  const centerLatRad = centerLatNode.mul(DEG2RAD)
+  const phiAbs = phi.add(centerLatRad)
+
+  const atLat = naturalEarthPolynomials(phiAbs)
+  const atCenter = naturalEarthPolynomials(centerLatRad)
 
   return vec3(
-    x.mul(worldScaleNode),
-    y.mul(worldScaleNode),
+    wrappedLambda.mul(atLat.xScale).mul(worldScaleNode),
+    atLat.y.sub(atCenter.y).mul(worldScaleNode),
     float(0)
   )
 }
