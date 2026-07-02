@@ -65,6 +65,7 @@ const AMBIENT = {
 const MARCH = {
   transmittanceMin: 0.015, // 透過率がここを下回ったら早期終了
   densityEps: 0.01,        // ライティング計算をスキップする密度下限
+  baseEps: 1e-3,           // 空空間判定: base 密度がこれ以下なら 3D ノイズ評価を省く
   alphaEps: 1e-4,          // 前割り解除時のゼロ除算ガード
   edgeFadeStart: 0.38,     // ボックス XZ 端フェード開始（|local| がこの値まで密度1）
   edgeFadeEnd: 0.5,        //   〃 終了（壁でスパッと切れるのを防ぐ）
@@ -152,14 +153,16 @@ const CLOUD_TYPES = {
 }
 
 // --- コンポーネント既定値 ---
-// steps は raymarch のサンプル数（GPU コスト直結）。重い場合は 32 まで下げる
+// steps は raymarch のサンプル数（GPU コスト直結）。
+// 大きくしすぎると Windows の TDR タイムアウト（約2秒）で
+// GPU デバイスロストになるので、まず 24〜32 の範囲で調整する
 const CLOUD_DEFAULTS = {
   width: 24,
   depth: 15,
   thickness: 2.5,
   coverage: 0.45,
   type: 'cumulus',
-  steps: 48,
+  steps: 32,
 }
 // inline 配列を避けるためのモジュール定数（useMemo は使わないが慣例に合わせる）
 const DEFAULT_POSITION = [0, 6, 0]
@@ -204,10 +207,14 @@ function hgPhase(cosTheta, g) {
 // 密度関数ファクトリ
 // ============================================================
 
-// preset と coverage から密度サンプラ Fn(([localPos]) => 0..1) を構築する。
+// preset と coverage から密度サンプラを2段構えで構築する。
+// - sampleBase: weather(2D fBM) × coverage remap × 垂直プロファイル × 端フェードのみの
+//   安い密度。空空間の判定と、太陽方向の光学深度マーチに使う
+// - sampleDensity: base が正の場所だけ 3D shape / detail の侵食を評価するフル密度。
+//   空空間で 3D ノイズを評価しないことが GPU 負荷（TDR 対策）の要
 // ノイズ座標はワールド空間（scale による歪みなし・複数マウントで位相が変わる）。
 // ライトマーチはボックス外の localPos も渡すが、プロファイルと端フェードで自然に 0 になる
-function createSampleDensity(preset, coverage) {
+function createDensitySamplers(preset, coverage) {
   // coverage は「remap の閾値シフト」として効かせる（最終密度への乗算ではない）。
   // coverage が大きい → threshold が下がる → weather のより広い領域が雲化する
   const covered = Math.min(Math.max(coverage + preset.coverageBias, 0), 1)
@@ -215,7 +222,11 @@ function createSampleDensity(preset, coverage) {
   let upper = Math.min(threshold + preset.coverageSoftness, 1)
   if (upper - threshold < 1e-4) upper = threshold + 1e-4
 
-  return Fn(([localPos]) => {
+  // cirrus の高さシア込みの X 座標（shear=0 なら worldP.x のまま）
+  const shearedX = (worldP, h) =>
+    preset.shear !== 0 ? worldP.x.add(h.mul(preset.shear)) : worldP.x
+
+  const sampleBase = Fn(([localPos]) => {
     const worldP = modelWorldMatrix.mul(vec4(localPos, 1)).xyz
     const h = clamp(localPos.y.add(0.5), 0, 1) // 層内の高さ割合 0..1
 
@@ -223,8 +234,7 @@ function createSampleDensity(preset, coverage) {
     const edge = smoothstep(MARCH.edgeFadeStart, MARCH.edgeFadeEnd, localPos.x.abs()).oneMinus()
       .mul(smoothstep(MARCH.edgeFadeStart, MARCH.edgeFadeEnd, localPos.z.abs()).oneMinus())
 
-    // --- cirrus: 高さシアで筋を斜めに流す ---
-    const px = preset.shear !== 0 ? worldP.x.add(h.mul(preset.shear)) : worldP.x
+    const px = shearedX(worldP, h)
 
     // --- 1) weather 場（2D, XZ）---
     // mx_fractal_noise はオクターブ合成で ±1 を超えうるので正規化後に clamp 必須
@@ -249,32 +259,49 @@ function createSampleDensity(preset, coverage) {
       const hTop = mix(float(1 - preset.towerByWeather), float(1), weather)
       profile = profile.mul(smoothstep(hTop.mul(0.6), hTop, h).oneMinus())
     }
-    const shaped = base.mul(profile).mul(edge)
 
-    // --- 4) base shape（3D fBM）で侵食 ---
-    const shapeP = vec3(
-      px.mul(preset.shapeScale[0]).add(time.mul(preset.windShape[0])),
-      worldP.y.mul(preset.shapeScale[1]),
-      worldP.z.mul(preset.shapeScale[2]).add(time.mul(preset.windShape[1]))
-    )
-    const shape = clamp(mx_fractal_noise_float(shapeP, 3).mul(0.5).add(0.5), 0, 1)
-    const eroded = remapClamped(shaped, shape.oneMinus().mul(preset.shapeAmount), float(1))
-
-    // --- 5) detail 侵食（加算ではなく削り。高さ依存で挙動を切替） ---
-    // mx_worley_noise は距離ベース（0 = 特徴点中心）なので billow では反転して使う
-    const detailP = vec3(
-      px.mul(preset.detailScale).add(time.mul(preset.windDetail[0])),
-      worldP.y.mul(preset.detailScale),
-      worldP.z.mul(preset.detailScale).add(time.mul(preset.windDetail[1]))
-    )
-    const worley = clamp(mx_worley_noise_float(detailP), 0, 1)
-    const detail = preset.detailStyle === 'wispy' ? worley : worley.oneMinus()
-    // 上部: pow でふわふわ / 下部: 反転で削れる（whippy）
-    const modifier = mix(detail.oneMinus(), detail.pow(4), smoothstep(0.2, 0.4, h))
-      .mul(preset.detailAmount)
-
-    return remapClamped(eroded, modifier, float(1))
+    return base.mul(profile).mul(edge)
   })
+
+  const sampleDensity = Fn(([localPos]) => {
+    const result = float(0).toVar()
+    const shaped = sampleBase(localPos).toVar()
+
+    // 空空間では 3D ノイズ（shape fBM + worley）を評価しない
+    If(shaped.greaterThan(MARCH.baseEps), () => {
+      const worldP = modelWorldMatrix.mul(vec4(localPos, 1)).xyz
+      const h = clamp(localPos.y.add(0.5), 0, 1)
+      const px = shearedX(worldP, h)
+
+      // --- 4) base shape（3D fBM）で侵食 ---
+      const shapeP = vec3(
+        px.mul(preset.shapeScale[0]).add(time.mul(preset.windShape[0])),
+        worldP.y.mul(preset.shapeScale[1]),
+        worldP.z.mul(preset.shapeScale[2]).add(time.mul(preset.windShape[1]))
+      )
+      const shape = clamp(mx_fractal_noise_float(shapeP, 3).mul(0.5).add(0.5), 0, 1)
+      const eroded = remapClamped(shaped, shape.oneMinus().mul(preset.shapeAmount), float(1))
+
+      // --- 5) detail 侵食（加算ではなく削り。高さ依存で挙動を切替） ---
+      // mx_worley_noise は距離ベース（0 = 特徴点中心）なので billow では反転して使う
+      const detailP = vec3(
+        px.mul(preset.detailScale).add(time.mul(preset.windDetail[0])),
+        worldP.y.mul(preset.detailScale),
+        worldP.z.mul(preset.detailScale).add(time.mul(preset.windDetail[1]))
+      )
+      const worley = clamp(mx_worley_noise_float(detailP), 0, 1)
+      const detail = preset.detailStyle === 'wispy' ? worley : worley.oneMinus()
+      // 上部: pow でふわふわ / 下部: 反転で削れる（whippy）
+      const modifier = mix(detail.oneMinus(), detail.pow(4), smoothstep(0.2, 0.4, h))
+        .mul(preset.detailAmount)
+
+      result.assign(remapClamped(eroded, modifier, float(1)))
+    })
+
+    return result
+  })
+
+  return { sampleBase, sampleDensity }
 }
 
 // ============================================================
@@ -283,7 +310,7 @@ function createSampleDensity(preset, coverage) {
 
 function createCloudMaterial({ type, coverage, steps }) {
   const preset = CLOUD_TYPES[type] ?? CLOUD_TYPES[CLOUD_DEFAULTS.type]
-  const sampleDensity = createSampleDensity(preset, coverage)
+  const { sampleBase, sampleDensity } = createDensitySamplers(preset, coverage)
 
   const material = new MeshBasicNodeMaterial({
     transparent: true,
@@ -335,11 +362,12 @@ function createCloudMaterial({ type, coverage, steps }) {
       const d = sampleDensity(pos).toVar()
 
       If(d.greaterThan(MARCH.densityEps), () => {
-        // 太陽方向への短い光学深度マーチ（lightSteps は JS 数値なので展開。
-        // sampleDensity は Fn なのでシェーダ関数呼び出しになりコード爆発しない）
+        // 太陽方向への短い光学深度マーチ。
+        // フル密度ではなく安い sampleBase で近似する（detail 侵食は
+        // 光学深度への寄与が小さく、コストは 1/4 以下になる）
         const opticalDepth = float(0).toVar()
         for (let j = 1; j <= preset.lightSteps; j += 1) {
-          opticalDepth.addAssign(sampleDensity(pos.add(lightStepVec.mul(j))))
+          opticalDepth.addAssign(sampleBase(pos.add(lightStepVec.mul(j))))
         }
         const lightT = exp(opticalDepth.mul(-(preset.extinction * preset.lightStepWorld)))
         // powder: 薄い縁で散乱が立ち上がる近似 1 - exp(-2ρ)
