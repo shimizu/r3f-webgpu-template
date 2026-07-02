@@ -19,7 +19,8 @@ export default [
         sourceType: 'module',
       },
     },
-    settings: { react: { version: '18.3' } },
+    // 'detect' は eslint-plugin-react 7.37 + eslint 10 の組み合わせでクラッシュするため明示指定
+    settings: { react: { version: '19.2' } },
     plugins: {
       react,
       'react-hooks': reactHooks,

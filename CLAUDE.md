@@ -9,7 +9,7 @@ React Three Fiber + WebGPU による GPU ファーストの GIS 可視化テン�
 設計思想は「ジオラマがホスト、GIS がゲスト」。フラットな地図 SDK ではなく、空・水・地形・天候を備えた箱庭ステージの上に GIS データを「展示物」として配置する lookdev / 可視化環境として機能している。
 
 - **GPU ファースト**: CPU はデータ取得とパックのみ。投影（lon/lat→XY）・補間・パーティクル移流・地形衝突・描画はすべて GPU（TSL）で行う
-- **地図 SDK を使わない**: Mapbox / Leaflet 等は導入しない。GIS ロジックは自前実装か軽量ユーティリティ（geotiff, chroma-js）で構築する
+- **地図 SDK を使わない**: Mapbox / Leaflet 等は導入しない。GIS ロジックは自前実装か軽量ユーティリティ（geotiff 等）で構築する
 
 ## 開発コマンド
 
