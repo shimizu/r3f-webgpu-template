@@ -3,6 +3,7 @@ import { useControls } from 'leva'
 import { MapControls } from '@react-three/drei'
 
 import LightingRig from './LightingRig'
+// eslint-disable-next-line no-unused-vars
 import SceneEffects from './effects/SceneEffects'
 // eslint-disable-next-line no-unused-vars
 import MaterialSamplesLayer from './layers/MaterialSamplesLayer'
@@ -56,7 +57,7 @@ function Scene({ entityCount = 2000 }) {
       <LightingRig />
 
       {/* ポストプロセッシング (Bloom + Tilt-Shift) */}
-      <SceneEffects />
+      {/*<SceneEffects />*/}
 
       {/* Preetham モデルによる動的な空の描画 */}
       <SkyLayer />
@@ -96,6 +97,7 @@ function Scene({ entityCount = 2000 }) {
       )}
 
       {/* 体積雲: 低層の積雲（地形フットプリントよりひと回り大きく） */}
+      {/*
       <CloudLayer
         width={24}
         depth={15}
@@ -103,16 +105,18 @@ function Scene({ entityCount = 2000 }) {
         coverage={0.45}
         type='cumulus'
         position={[0, 6, 0]}
-      />
+      />      
+      */}
+
       {/* 体積雲: 高層の巻雲（薄く広く、レイヤー重ねのデモ。薄い層なので steps 少なめ） */}
       <CloudLayer
-        width={32}
-        depth={22}
-        thickness={1.2}
-        coverage={0.35}
-        type='cirrus'
-        steps={24}
-        position={[0, 10, 0]}
+        width={21.3}
+        depth={12.6}
+        thickness={1.5}
+        coverage={0.65}
+        type='stratus'
+        steps={12}
+        position={[0, 5, 0]}
       />
 
       {/* HTML ラベル */}
