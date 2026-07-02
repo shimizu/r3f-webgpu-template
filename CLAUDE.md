@@ -45,7 +45,7 @@ CPU(受信・パック) → GPU(投影・補間) → Draw(インスタンス描�
 - `StudioEnvironment.jsx` — RoomEnvironment による IBL（PMREM 生成）
 - `LightingRig.jsx` — ambient / hemisphere / directional（シャドウ付き）/ spot のスタジオ照明セット
 
-**レイヤーのトグル運用**: `Scene.jsx` では多くのレイヤー import が `// eslint-disable-next-line no-unused-vars` 付きでコメント的に保持されている。これは lookdev 中に有効化・無効化を切り替えるための運用パターン。現在アクティブなのは Sky / Coordinate（Geojson + MovingEntities）が中心。`backup_Scene.jsx` は過去の構成のスナップショット。
+**レイヤーのトグル運用**: `Scene.jsx` では多くのレイヤー import が `// eslint-disable-next-line no-unused-vars` 付きでコメント的に保持されている。これは lookdev 中に有効化・無効化を切り替えるための運用パターンなので、未使用 import を安易に削除しないこと。アクティブなレイヤー構成は頻繁に入れ替わるため、現状は `Scene.jsx` の JSX を直接確認する。ランタイムのパラメータトグルには leva（`useControls`）を使う。`backup_Scene.jsx` は過去の構成のスナップショット。
 
 ### 投影コンテキスト（`src/gis/`）
 
@@ -71,6 +71,7 @@ CPU(受信・パック) → GPU(投影・補間) → Draw(インスタンス描�
 - `RainLayer` — GPU パーティクルの降雨（地形衝突あり）
 - `GeojsonLayer` — GeoJSON ベクター地図描画
 - `MovingEntitiesLayer` — GPU 移動体（船舶・航空機）の補間描画
+- `Labels3DLayer` — drei `<Html>` による 3D 空間内の HTML ラベル（地名等）
 
 ### マテリアルベースライン
 
@@ -81,7 +82,7 @@ CPU(受信・パック) → GPU(投影・補間) → Draw(インスタンス描�
 WebGPU ネイティブの後処理パイプライン（`@react-three/postprocessing` は依存に入っているが src では未使用）:
 
 - `SceneEffects.jsx` — `RenderPipeline` + `pass(scene, camera)` で scenePass を作り、各エフェクトをノードグラフで合成。`rp.outputNode` を `useFrame` で描画
-- `createBloom.js` / `createDof.js` / `createGodrays.js` — 個別エフェクトを `create*Pass()` として分離。現在は Bloom のみ有効、Godrays / DoF はコメントアウトで一時無効化
+- `createBloom.js` / `createTiltShift.js` / `createDof.js` / `createGodrays.js` — 個別エフェクトを `create*Pass()` として分離。現在は Bloom + Tilt-Shift（ミニチュア風ぼかし）が有効、Godrays / DoF はコメントアウトで一時無効化
 
 ### GPU コンピュート（`src/compute/`）
 

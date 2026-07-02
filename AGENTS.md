@@ -4,7 +4,7 @@
 `src/` contains the application code. Entry points are `src/main.jsx` and `src/App.jsx`; `src/Scene.jsx` composes the 3D scene. Keep reusable scene pieces in `src/layers/`, postprocessing in `src/effects/`, GPU compute helpers in `src/compute/`, GIS utilities in `src/gis/`, and sample data in `src/data/`. Static assets live under `public/`, including `public/data/` for GeoJSON and `public/dem/` or `public/textures/` for terrain and material inputs. Reference notes and design writeups belong in `docs/`.
 
 ## Build, Test, and Development Commands
-Use `npm install` to install dependencies from `package-lock.json`. Run `npm run dev` to start the Vite dev server. Run `npm run build` to create a production bundle in `dist/`. Run `npm run preview` to serve the built output locally for a quick production check. There is no dedicated lint script yet; use `npx eslint .` before opening a PR.
+Use `npm install` to install dependencies from `package-lock.json`. Run `npm run dev` to start the Vite dev server. Run `npm run build` to create a production bundle in `dist/`. Run `npm run preview` to serve the built output locally for a quick production check. Run `npm run lint` before opening a PR.
 
 ## Coding Style & Naming Conventions
 This project uses ES modules, React function components, and JSX. Preserve the existing style: no semicolons, single quotes, and straightforward module structure. Name React components and scene layers in PascalCase (`WaterOceanLayer.jsx`), helper modules in camelCase (`createBloom.js`), and colocate related files by feature. Keep Three.js and React Three Fiber props explicit rather than heavily abstracted; this codebase favors readable scene composition over dense helper wrappers.
