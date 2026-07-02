@@ -10,39 +10,13 @@
 
 ミニチュアジオラマの卓上に、地形・海・空・天候が揃った箱庭世界がある。その舞台の上で、地理空間データが GPU 駆動で動く。地図アプリではなく、「触れる地球儀の中身を覗く」ような体験を作る。
 
-## 現状の達成物
+## 現状
 
-### ジオラマ舞台（lookdev 環境）
+**Phase A（ジオラマ + GIS の空間統合）まで完了。**
 
-| レイヤー | 役割 | 状態 |
-|---|---|---|
-| SkyLayer | Preetham 大気散乱 + アニメ雲 | 稼働中 |
-| GridLayer | 工作マット風 400×400 床面 | 稼働中 |
-| MaterialSamplesLayer | PBR サンプル球体 5 種 + CubeCamera 反射 | 稼働中 |
-| WaterBoxLayer | TSL 波高シミュレーション水面 | 稼働中 |
-| WaterBlobLayer | パルス変形水面 | 稼働中 |
-| WaterOceanLayer | ノーマルマップスクロール海面 | 稼働中 |
-| LightingRig | ambient / hemisphere / directional / spot | 稼働中 |
-| StudioEnvironment | RoomEnvironment IBL | 稼働中 |
-| SceneEffects | Bloom + Godrays | 稼働中 |
-| TerrainLayer | GeoTIFF DEM + ガウスぼかし | 実装済み・未配置 |
-| RainLayer | GPU 雨粒 + 地形衝突スプラッシュ | 実装済み・未配置 |
-| StageLayer | チェッカーボード床 | 実装済み・未配置 |
-
-### GIS 機能
-
-| 要素 | 役割 | 状態 |
-|---|---|---|
-| GeojsonLayer | GeoJSON 海岸線の LineSegments + Points 描画 | 稼働中 |
-| MovingEntitiesLayer | GPU 補間パーティクル（船舶・航空機 billboard） | 稼働中 |
-| createProjectionPass | GPU 等距円筒投影 | 実装済み |
-| createInterpolationPass | GPU 時刻補間 + 投影 | 稼働中 |
-| projection.js | CPU 等距円筒投影（GeojsonLayer 用） | 稼働中 |
-| mockObservations.js | ダミー移動体データ生成 | 稼働中 |
-
-### スケール関係
-
-現在の WORLD_VIEW（worldScale: 4.6）では、地球全体が約 4.6 ユニット幅に収まる。GridLayer の 400×400 ユニットの中では非常に小さい。ジオラマの一部として地図を「テーブルの上の地球儀」のように見せるにはこのスケールで問題ないが、地形レイヤーや天候レイヤーと空間的に連携するには view 設定の調整が必要になる。
+- ジオラマ基盤（空・床・照明・水系・Bloom + TiltShift）、地形（TerrainLayer）、GIS（GeojsonLayer / MovingEntitiesLayer / GPU 投影・補間）は実装済み
+- `<Coordinate>` 投影コンテキストにより DEM 地形と GeoJSON が同一投影平面に自動整合する（HORMUZ_VIEW で稼働中）。投影は CPU（`projectionCPU.js`、ジオメトリ焼き込み用）と GPU（`projectionGPU.js`、TSL）で同一数式を共有
+- 実装の詳細は CLAUDE.md、既知の課題と改善タスクは review.md を参照
 
 ## 設計思想
 
@@ -72,12 +46,12 @@ RainLayer の GPU パーティクル + 地形衝突パターンは、GIS パー�
 
 ## レイヤー体系
 
-### ジオラマ基盤レイヤー（変更なし）
+### ジオラマ基盤レイヤー
 
 - SkyLayer — 空と雲
 - GridLayer — 工作マット床面
 - LightingRig — 照明セット
-- SceneEffects — Bloom / Godrays
+- SceneEffects — Bloom / TiltShift（DoF / Godrays は実装済み・無効化中）
 
 ### 素材展示レイヤー（lookdev）
 
@@ -101,19 +75,9 @@ RainLayer の GPU パーティクル + 地形衝突パターンは、GIS パー�
 
 ## ロードマップ
 
-### Phase A: ジオラマ + GIS の空間統合（現在地）
+Phase A（ジオラマ + GIS の空間統合）は完了済み。
 
-**完了済み:**
-- GeojsonLayer を XZ 床面に回転配置
-- MovingEntitiesLayer の billboarding 位置を XZ 変換
-- leva で entityCount を実行時調整
-
-**残作業:**
-- TerrainLayer と GIS レイヤーの空間的整合（DEM 上に地図を重ねる）
-- view 設定の調整（worldScale とジオラマスケールの関係を詰める）
-- GeojsonLayer の投影を GPU に統一する（現在 CPU 投影で二重実装）
-
-### Phase B: 地形連携 GIS パーティクル
+### Phase B: 地形連携 GIS パーティクル（現在地）
 
 TerrainLayer の DEM を GIS パーティクルの衝突面として活用する。RainLayer のパターンを転用。
 
@@ -152,14 +116,14 @@ GIS データとジオラマ演出を融合させる。
 
 ## Compute パス構成
 
-### 既存（稼働中）
+### 既存
 
-| パス | ファイル | 役割 |
+| パス | ファイル | 状態 |
 |---|---|---|
-| Projection | createProjectionPass.js | lon/lat → XY 投影 |
-| Interpolation | createInterpolationPass.js | 時刻補間 + 投影 |
-| Rain | runRainCompute.js | 雨粒物理 + 地形衝突 + スプラッシュ |
-| Bars | runBarsCompute.js | ランダムウォーク粒子（退役候補） |
+| Interpolation | createInterpolationPass.js | 稼働中（時刻補間 + 投影） |
+| Rain | runRainCompute.js | 稼働中（雨粒物理 + 地形衝突 + スプラッシュ） |
+| Projection | createProjectionPass.js | Interpolation に置換済み・退役候補 |
+| Bars | runBarsCompute.js | 未使用・退役候補 |
 
 ### 追加予定
 
@@ -173,7 +137,7 @@ GIS データとジオラマ演出を融合させる。
 
 ### 移動体（既存）
 
-- `rawObservationBuffer` — lon, lat, alt, timestamp, prev 値, speed, heading, type, status（STRIDE=12）
+- `rawObservationBuffer` — lon, lat, alt, timestamp, prev 値, speed, heading, type, status（STRIDE=12、`observationLayout.js` が単一ソース）
 - `projectedPositionAttribute` — GPU 投影済み vec3
 
 ### トレイル（Phase C で追加）
@@ -188,42 +152,15 @@ GIS データとジオラマ演出を融合させる。
 
 ## ファイル構成方針
 
-現在のフラットな `src/layers/` 構成を維持する。ジオラマレイヤーと GIS レイヤーを同じディレクトリに並べる。
+現在のフラットな `src/layers/` 構成を維持する。ジオラマレイヤーと GIS レイヤーを同じディレクトリに並べる（現状の構成は CLAUDE.md を参照）。
 
-```
-src/
-├── compute/
-│   ├── createProjectionPass.js      # 既存
-│   ├── createInterpolationPass.js   # 既存
-│   ├── runRainCompute.js            # 既存
-│   ├── runBarsCompute.js            # 退役候補
-│   ├── createTrailUpdatePass.js     # Phase C
-│   └── createFlowAdvectionPass.js   # Phase D
-├── gis/
-│   ├── projection.js                # 既存（GPU 統一後は縮小）
-│   ├── projectionOptions.js         # 既存
-│   └── views.js                     # 既存
-├── layers/
-│   ├── SkyLayer.jsx                 # ジオラマ
-│   ├── GridLayer.jsx                # ジオラマ
-│   ├── MaterialSamplesLayer.jsx     # lookdev
-│   ├── WaterBoxLayer.jsx            # lookdev
-│   ├── WaterBlobLayer.jsx           # lookdev
-│   ├── WaterOceanLayer.jsx          # lookdev
-│   ├── TerrainLayer.jsx             # 地形
-│   ├── RainLayer.jsx                # 天候
-│   ├── GeojsonLayer.jsx             # GIS
-│   ├── MovingEntitiesLayer.jsx      # GIS
-│   ├── TrailLayer.jsx               # GIS（Phase C）
-│   └── FlowFieldLayer.jsx           # GIS（Phase D）
-├── data/
-│   └── mockObservations.js          # 既存
-└── effects/
-    ├── SceneEffects.jsx             # 既存
-    ├── createBloom.js               # 既存
-    ├── createDof.js                 # 既存
-    └── createGodrays.js             # 既存
-```
+Phase C / D での追加候補:
+
+- `src/compute/createTrailUpdatePass.js`
+- `src/compute/createFlowAdvectionPass.js`
+- `src/layers/TrailLayer.jsx`
+- `src/layers/FlowFieldLayer.jsx`
+- `src/data/mockVectorField.js`
 
 ## 判断基準
 
