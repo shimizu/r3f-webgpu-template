@@ -39,6 +39,8 @@
   という compute 更新レイヤーを担当している。
 */
 import { StorageBufferAttribute } from 'three/webgpu'
+
+import { disposeStorageAttributes } from './disposeStorageAttributes'
 import {
   Fn,
   add,
@@ -365,9 +367,16 @@ export function createBarsComputeRunner(inputValues) {
       renderer.compute(computeNode)
     },
 
-    destroy() {
+    destroy(renderer) {
       // compute 用ノードも GPU リソースを持つので、不要になったら破棄する。
       computeNode.dispose()
+      // standalone な StorageBufferAttribute は renderer 側に解放を依頼する
+      disposeStorageAttributes(renderer, [
+        attributes.animatedPositionAttribute,
+        attributes.velocityAttribute,
+        attributes.lifeAttribute,
+        attributes.maxLifeAttribute,
+      ])
     },
   }
 }

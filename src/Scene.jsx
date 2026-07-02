@@ -3,6 +3,7 @@ import { useControls } from 'leva'
 import { MapControls } from '@react-three/drei'
 
 import LightingRig from './LightingRig'
+// eslint-disable-next-line no-unused-vars
 import SceneEffects from './effects/SceneEffects'
 // eslint-disable-next-line no-unused-vars
 import MaterialSamplesLayer from './layers/MaterialSamplesLayer'
@@ -15,11 +16,24 @@ import WaterBoxLayer from './layers/WaterBoxLayer'
 import WaterOceanLayer from './layers/WaterOceanLayer'
 import Coordinate from './gis/CoordinateContext'
 import { HORMUZ_VIEW } from './gis/views'
+// eslint-disable-next-line no-unused-vars
 import GeojsonLayer from './layers/GeojsonLayer'
 // eslint-disable-next-line no-unused-vars
 import MovingEntitiesLayer from './layers/MovingEntitiesLayer'
 import TerrainLayer from './layers/TerrainLayer'
+import CloudLayer from './layers/CloudLayer'
 import Labels3DLayer from './layers/Labels3DLayer'
+
+// 移動体モックの生成域（hormuz.tif の bbox 45.85〜65.19 / 21.90〜32.12 の内側）。
+// MovingEntitiesLayer の useMemo 依存になるため、inline ではなく定数で渡す
+// eslint-disable-next-line no-unused-vars
+const ENTITY_REGION = {
+  lonMin: 47,
+  lonMax: 64,
+  latMin: 22.5,
+  latMax: 31.5,
+  lonDrift: -3,
+}
 
 /**
  * シーン全体の構成を定義するコンポーネント。
@@ -43,9 +57,9 @@ function Scene({ entityCount = 2000 }) {
       <LightingRig />
 
       {/* ポストプロセッシング (Bloom + Tilt-Shift) */}
-      <SceneEffects />
+      {/*<SceneEffects />*/}
 
-      {/* Preetham モデルによる動的な空の描画 */}
+      {/* 室内・卓上トーンの空ドーム（静的グラデーション + fBM 雲） */}
       <SkyLayer />
 
       {/* 地図閲覧に適したカメラ操作（左ドラッグで移動、右ドラッグで回転） */}
@@ -68,8 +82,8 @@ function Scene({ entityCount = 2000 }) {
           baseHeight={1.5}
           seaLevel={0.19}
         />
-        <GeojsonLayer url='./data/world.geojson' altitude={1.65} />
       </Coordinate>
+
 
       {/* 海面レイヤー（投影後の地形フットプリント 21.38 × 12.68 に合わせる） */}
       {showOcean && (
@@ -81,6 +95,29 @@ function Scene({ entityCount = 2000 }) {
           position={[0, 0.5, 0]}
         />
       )}
+
+      {/* 体積雲: 低層の積雲（地形フットプリントよりひと回り大きく） */}
+      {/*
+      <CloudLayer
+        width={24}
+        depth={15}
+        thickness={2.5}
+        coverage={0.45}
+        type='cumulus'
+        position={[0, 6, 0]}
+      />      
+      */}
+
+      {/* 体積雲: 高層の巻雲（薄く広く、レイヤー重ねのデモ。薄い層なので steps 少なめ） */}
+      <CloudLayer
+        width={21.3}
+        depth={12.6}
+        thickness={1.5}
+        coverage={0.65}
+        type='stratus'
+        steps={12}
+        position={[0, 5, 0]}
+      />
 
       {/* HTML ラベル */}
       <Labels3DLayer />

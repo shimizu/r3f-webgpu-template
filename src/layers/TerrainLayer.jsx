@@ -496,10 +496,6 @@ function TerrainLayer({
           rasters = await tiff.readRasters({ width: targetW, height: targetH })
           width = rasters.width
           height = rasters.height
-          console.log(
-            `TerrainLayer: COG detected (${imageCount} images). ` +
-            `Downsampled ${fullWidth}x${fullHeight} → ${width}x${height}`
-          )
         } else {
           // 非 COG: image.readRasters の resample で縮小
           const ratio = Math.max(fullWidth, fullHeight) / MAX_DEM_SIZE
@@ -508,9 +504,6 @@ function TerrainLayer({
           rasters = await image.readRasters({ width: targetW, height: targetH })
           width = rasters.width
           height = rasters.height
-          console.log(
-            `TerrainLayer: Large DEM resampled ${fullWidth}x${fullHeight} → ${width}x${height}`
-          )
         }
       } else {
         rasters = await image.readRasters()

@@ -17,6 +17,8 @@
   スプラッシュは衝突点から放射状に広がり、重力で落下しながら寿命で消える。
 */
 import { StorageBufferAttribute } from 'three/webgpu'
+
+import { disposeStorageAttributes } from './disposeStorageAttributes'
 import {
   Fn,
   clamp,
@@ -152,9 +154,10 @@ export function createRainComputeRunner({
 
   // --- 高さマップ ---
   let heightMapNode = null
+  let heightMapAttribute = null
   const hasHeightMap = heightData && heightCols > 0 && heightRows > 0
   if (hasHeightMap) {
-    const heightMapAttribute = new StorageBufferAttribute(
+    heightMapAttribute = new StorageBufferAttribute(
       new Float32Array(heightData), 1
     )
     heightMapNode = storage(heightMapAttribute, 'float', heightCols * heightRows).toReadOnly()
@@ -415,9 +418,18 @@ export function createRainComputeRunner({
       renderer.compute(splashComputeNode)
     },
 
-    destroy() {
+    destroy(renderer) {
       rainComputeNode.dispose()
       splashComputeNode.dispose()
+      // standalone な StorageBufferAttribute は renderer 側に解放を依頼する
+      disposeStorageAttributes(renderer, [
+        positionAttribute,
+        velocityAttribute,
+        splashPosAttribute,
+        splashVelAttribute,
+        splashLifeAttribute,
+        heightMapAttribute,
+      ])
     },
   }
 }

@@ -31,6 +31,8 @@
   ための Projection Pass を担当している。
 */
 import { StorageBufferAttribute } from 'three/webgpu'
+
+import { disposeStorageAttributes } from './disposeStorageAttributes'
 import { Fn, instanceIndex, int, storage } from 'three/tsl'
 
 import { projectLonLatGPU } from '../gis/projectionGPU'
@@ -102,9 +104,14 @@ export function createProjectionPass(rawObservationBuffer, options = {}) {
       renderer.compute(computeNode)
     },
 
-    destroy() {
+    destroy(renderer) {
       // TSL の compute ノードも GPU リソースを持つので破棄しておく。
       computeNode.dispose()
+      // standalone な StorageBufferAttribute は renderer 側に解放を依頼する
+      disposeStorageAttributes(renderer, [
+        rawObservationAttribute,
+        projectedPositionAttribute,
+      ])
     },
   }
 }

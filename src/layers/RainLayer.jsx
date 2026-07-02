@@ -41,7 +41,12 @@ const SPLASH_COLOR = '#ccddff'      // スプラッシュの色
 const SPLASH_LIFE_MAX = 0.4         // スプラッシュ最大寿命
 const RAIN_COLOR = '#aaccff'
 const DEFAULT_DELTA = 1 / 60
+// デフォルト値を inline 配列にすると毎レンダーで新規参照になり
+// useMemo が再実行される（GPU リソース全再生成）ため、モジュール定数にする
+const DEFAULT_WIND = [0.01, 0, 0.005]
 
+// wind: [x, y, z]。heightInfo は TerrainLayer の onHeightData から渡す想定で、
+// 毎レンダー新規オブジェクトを渡すと GPU リソースが再生成されるため安定参照で渡すこと
 function RainLayer({
   position = [0, 0, 0],
   width = 15,
@@ -49,11 +54,14 @@ function RainLayer({
   topY = 8,
   particleCount = 30000,
   rainSpeed = 0.08,
-  wind = [0.01, 0, 0.005],
+  wind = DEFAULT_WIND,
   heightInfo = null,
 }) {
   const renderer = useThree((state) => state.gl)
   const systemRef = useRef(null)
+
+  // wind は成分値で依存させ、呼び出し側が inline 配列を渡しても再生成されないようにする
+  const [windX, windY, windZ] = wind
 
   const resources = useMemo(() => {
     const system = createRainComputeRunner({
@@ -62,7 +70,7 @@ function RainLayer({
       areaDepth: depth,
       topY,
       rainSpeed,
-      wind,
+      wind: [windX, windY, windZ],
       heightData: heightInfo?.heights ?? null,
       heightCols: heightInfo?.cols ?? 0,
       heightRows: heightInfo?.rows ?? 0,
@@ -181,14 +189,14 @@ function RainLayer({
       splashGeometry, splashMaterial, splashMesh,
       system,
     }
-  }, [particleCount, width, depth, topY, rainSpeed, wind, heightInfo])
+  }, [particleCount, width, depth, topY, rainSpeed, windX, windY, windZ, heightInfo])
 
   useEffect(() => {
     resources.system.init(renderer)
     systemRef.current = resources.system
 
     return () => {
-      resources.system.destroy()
+      resources.system.destroy(renderer)
       resources.rainGeometry.dispose()
       resources.rainMaterial.dispose()
       resources.splashGeometry.dispose()
@@ -197,12 +205,14 @@ function RainLayer({
     }
   }, [renderer, resources])
 
-  useFrame((state) => {
+  // delta は useFrame の第2引数を使う。
+  // state.clock.getDelta() は R3F 内部の elapsedTime 更新と競合してほぼ 0 を返す
+  useFrame((state, delta) => {
     if (!systemRef.current) return
     systemRef.current.update(
       renderer,
       state.clock.elapsedTime,
-      state.clock.getDelta() || DEFAULT_DELTA
+      delta || DEFAULT_DELTA
     )
   })
 

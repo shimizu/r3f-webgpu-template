@@ -135,6 +135,10 @@ TerrainLayer / GeojsonLayer / Water系 / MovingEntitiesLayer は dispose 済み�
 
 ## 5. 優先度付き改善タスクリスト
 
+> **対応状況（2026-07-02 追記、ブランチ fix/review-high）**:
+> - **対応済み**: H1〜H5 すべて、M3 / M4 / M6 / M8、L2（ドキュメント整合）、L3（コメント乖離修正）
+> - **未対応**: M1（水系共通化）/ M2（IBL + 水面反射色）/ M5（デッドコード整理）/ M7（heightInfo 配線）、L1 / L4 / L5 / L6
+
 ### High（実害バグ・look の破綻）
 
 | # | タスク | 対象 |

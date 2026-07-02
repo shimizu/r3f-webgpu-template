@@ -1,5 +1,5 @@
  
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import { PlaneGeometry } from 'three'
 import { MeshPhysicalNodeMaterial } from 'three/webgpu'
 import {
@@ -23,7 +23,7 @@ const GRID_DEFAULTS = {
   subGridScale: 1.0,      // サブグリッド間隔
   lineWidth: 0.02,        // メインライン幅
   subLineWidth: 0.01,     // サブライン幅
-  baseColor: '#3f73d3',   // 工作シートの緑
+  baseColor: '#3f73d3',   // 工作マット風の青
   lineColor: '#ffffff',   // グリッド線の色
   lineOpacity: 0.3,       // メインラインの不透明度
   subLineOpacity: 0.05,   // サブラインの不透明度
@@ -88,7 +88,14 @@ function createGridMaterial(options = {}) {
 function GridLayer({
   size = GRID_DEFAULTS.size,
   position = [0, 0, 0],
-  ...materialOptions
+  gridScale = GRID_DEFAULTS.gridScale,
+  subGridScale = GRID_DEFAULTS.subGridScale,
+  lineWidth = GRID_DEFAULTS.lineWidth,
+  subLineWidth = GRID_DEFAULTS.subLineWidth,
+  baseColor = GRID_DEFAULTS.baseColor,
+  lineColor = GRID_DEFAULTS.lineColor,
+  lineOpacity = GRID_DEFAULTS.lineOpacity,
+  subLineOpacity = GRID_DEFAULTS.subLineOpacity,
 }) {
   const geometry = useMemo(() => {
     const geo = new PlaneGeometry(size, size)
@@ -96,7 +103,23 @@ function GridLayer({
     return geo
   }, [size])
 
-  const material = useMemo(() => createGridMaterial(materialOptions), [])
+  // オプションは rest オブジェクトではなく個別値で依存させ、props 変更を確実に反映する
+  const material = useMemo(
+    () => createGridMaterial({
+      gridScale,
+      subGridScale,
+      lineWidth,
+      subLineWidth,
+      baseColor,
+      lineColor,
+      lineOpacity,
+      subLineOpacity,
+    }),
+    [gridScale, subGridScale, lineWidth, subLineWidth, baseColor, lineColor, lineOpacity, subLineOpacity]
+  )
+
+  useEffect(() => () => geometry.dispose(), [geometry])
+  useEffect(() => () => material.dispose(), [material])
 
   return (
     <mesh

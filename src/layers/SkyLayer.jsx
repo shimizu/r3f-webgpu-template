@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import { BackSide } from 'three'
 import { MeshBasicNodeMaterial } from 'three/webgpu'
 import {
@@ -133,6 +133,9 @@ function createSkyMaterial() {
 
 function SkyLayer({ radius = DOME.radius }) {
   const skyMaterial = useMemo(() => createSkyMaterial(), [])
+
+  // sphereGeometry は R3F が自動 dispose するが、手動生成した material は自前で解放する
+  useEffect(() => () => skyMaterial.dispose(), [skyMaterial])
 
   return (
     <mesh>

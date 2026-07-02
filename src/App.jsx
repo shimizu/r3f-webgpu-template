@@ -24,10 +24,33 @@ async function createRenderer(props) {
 }
 
 /**
+ * WebGPU 非対応環境向けのフォールバック表示。
+ * このテンプレートは WebGPU 必須（compute shader / TSL を多用）のため、
+ * WebGL への自動フォールバックは行わず、明示的にメッセージを出す。
+ */
+function WebGPUNotSupported() {
+  return (
+    <div className='app-fallback'>
+      <div>
+        <h1>WebGPU に対応していない環境です</h1>
+        <p>
+          このアプリは WebGPU が必要です。
+          最新の Chrome / Edge、または WebGPU を有効化したブラウザでアクセスしてください。
+        </p>
+      </div>
+    </div>
+  )
+}
+
+/**
  * アプリケーションのルートコンポーネント。
  * R3F の Canvas を配置し、WebGPU レンダラーの設定とカメラの初期位置を定義します。
  */
 function App() {
+  if (typeof navigator === 'undefined' || !navigator.gpu) {
+    return <WebGPUNotSupported />
+  }
+
   return (
     <div className='app-shell'>
       {/* フレームレート統計表示 */}

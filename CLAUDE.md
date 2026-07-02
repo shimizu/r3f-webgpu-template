@@ -9,7 +9,7 @@ React Three Fiber + WebGPU による GPU ファーストの GIS 可視化テン�
 設計思想は「ジオラマがホスト、GIS がゲスト」。フラットな地図 SDK ではなく、空・水・地形・天候を備えた箱庭ステージの上に GIS データを「展示物」として配置する lookdev / 可視化環境として機能している。
 
 - **GPU ファースト**: CPU はデータ取得とパックのみ。投影（lon/lat→XY）・補間・パーティクル移流・地形衝突・描画はすべて GPU（TSL）で行う
-- **地図 SDK を使わない**: Mapbox / Leaflet 等は導入しない。GIS ロジックは自前実装か軽量ユーティリティ（geotiff, chroma-js）で構築する
+- **地図 SDK を使わない**: Mapbox / Leaflet 等は導入しない。GIS ロジックは自前実装か軽量ユーティリティ（geotiff 等）で構築する
 
 ## 開発コマンド
 
@@ -39,8 +39,9 @@ CPU(受信・パック) → GPU(投影・補間) → Draw(インスタンス描�
 
 `App.jsx` → `Scene.jsx` → 各レイヤー の階層構造:
 
-- `App.jsx` — Canvas シェル、WebGPU レンダラー初期化（`gl={createRenderer}` で `WebGPURenderer` を非同期 init）
+- `App.jsx` — Canvas シェル、WebGPU レンダラー初期化（`gl={createRenderer}` で `WebGPURenderer` を非同期 init）。`navigator.gpu` チェックで非対応環境にはフォールバック表示を出す
 - `Scene.jsx` — シーン合成の入口。空・照明・カメラ操作（MapControls）・投影コンテキスト・レイヤー群を組み立てる
+- `ErrorBoundary.jsx` — 描画ツリーの実行時エラーで白画面にならないための最小境界（main.jsx でラップ）
 - `FpsStats.jsx` — FPS 表示オーバーレイ
 - `StudioEnvironment.jsx` — RoomEnvironment による IBL（PMREM 生成）
 - `LightingRig.jsx` — ambient / hemisphere / directional（シャドウ付き）/ spot のスタジオ照明セット
@@ -63,11 +64,12 @@ CPU(受信・パック) → GPU(投影・補間) → Draw(インスタンス描�
 
 レイヤーは独立した React コンポーネントとして実装し、`Scene.jsx` で合成する:
 
-- `SkyLayer` — Preetham モデルによる大気散乱の空
+- `SkyLayer` — 室内・卓上トーンの空ドーム（静的グラデーション + fBM 雲。大気散乱モデルではない）
 - `StageLayer` / `GridLayer` — ジオラマ床（チェッカーボード／グリッド）
 - `MaterialSamplesLayer` — マテリアルサンプル球体の lookdev 基準（後述）
 - `WaterBoxLayer` / `WaterBlobLayer` / `WaterOceanLayer` — TSL による水面シミュレーション（Perlin/FBM ノイズ + 波・フレネル・深度カラーを GPU 計算）
 - `TerrainLayer` — GeoTIFF (DEM) ベースの 3D 地形メッシュ
+- `CloudLayer` — TSL raymarching による体積雲（cumulus / stratus / cirrus の3プリセット、範囲・coverage・厚みを props 指定）。GPU 負荷が高いので steps は控えめに（TDR 注意、既定構成は steps≈12）
 - `RainLayer` — GPU パーティクルの降雨（地形衝突あり）
 - `GeojsonLayer` — GeoJSON ベクター地図描画
 - `MovingEntitiesLayer` — GPU 移動体（船舶・航空機）の補間描画
@@ -79,18 +81,19 @@ CPU(受信・パック) → GPU(投影・補間) → Draw(インスタンス描�
 
 ### ポストプロセッシング（`src/effects/`）
 
-WebGPU ネイティブの後処理パイプライン（`@react-three/postprocessing` は依存に入っているが src では未使用）:
+WebGPU ネイティブの後処理パイプライン:
 
 - `SceneEffects.jsx` — `RenderPipeline` + `pass(scene, camera)` で scenePass を作り、各エフェクトをノードグラフで合成。`rp.outputNode` を `useFrame` で描画
-- `createBloom.js` / `createTiltShift.js` / `createDof.js` / `createGodrays.js` — 個別エフェクトを `create*Pass()` として分離。現在は Bloom + Tilt-Shift（ミニチュア風ぼかし）が有効、Godrays / DoF はコメントアウトで一時無効化
+- `createBloom.js` / `createTiltShift.js` / `createDof.js` / `createGodrays.js` — 個別エフェクトを `create*Pass()` として分離。Bloom + Tilt-Shift（ミニチュア風ぼかし）を合成し、Godrays / DoF はコメントアウトで無効化中。SceneEffects 自体の有効/無効は Scene.jsx のトグル運用に従う（GPU 負荷次第で外すことがある）
 
 ### GPU コンピュート（`src/compute/`）
 
-- `runBarsCompute.js` — パーティクルシステム。`StorageBufferAttribute` で位置・速度・寿命を管理し、TSL compute node で毎フレーム GPU 更新（バウンス、ジッター、リスポーン）
+- `createInterpolationPass.js` — GIS エンティティの補間 + 投影コンピュートパス（MovingEntitiesLayer が使用）。日付変更線をまたぐ最短経路補間に対応
 - `runRainCompute.js` — 降雨パーティクルの物理・風場（FBM）・地形衝突
-- `createProjectionPass.js` / `createInterpolationPass.js` — GIS エンティティの投影・補間コンピュートパス
+- `disposeStorageAttributes.js` — compute 専用 StorageBufferAttribute の GPU バッファ解放ヘルパー。各パスの `destroy(renderer)` から呼ぶ（新パスを作る場合も必ず組み込むこと）
+- `createProjectionPass.js` / `runBarsCompute.js` — 補間パスに置換済み・未使用（退役候補）
 - `observationLayout.js` — 観測データレイアウト定義。`OBSERVATION_STRIDE = 12` floats/エンティティ: lon, lat, alt, timestamp, prevLon, prevLat, prevAlt, prevTimestamp, speed, heading, type, status
-- `src/data/mockObservations.js` — 開発用のモック観測データ
+- `src/data/mockObservations.js` — 開発用のモック観測データ（`region` オプションで生成域を限定可能）
 
 ### TSL パターン
 
@@ -99,7 +102,7 @@ WebGPU ネイティブの後処理パイプライン（`@react-three/postprocess
 - `MeshPhysicalNodeMaterial` に対して `positionNode`, `colorNode`, `normalNode` 等をノードグラフで構築
 - `mx_noise_float` 等のビルトインノイズ関数で手続き的テクスチャ生成
 - `uniform()` でCPU↔GPU間のパラメータ連携
-- compute shader は `Fn()` + `compute()` で定義し、`renderer.computeAsync()` で実行
+- compute shader は `Fn()` + `compute()` で定義し、`renderer.compute()` で実行
 
 ## コーディングスタイル
 
@@ -121,6 +124,7 @@ WebGPU ネイティブの後処理パイプライン（`@react-three/postprocess
 - `docs/r3f-computeshader_llm.md` — R3F + ComputeShader の実装リファレンス
 - `docs/rain-terrain-collision.md` — 降雨パーティクルと地形衝突の設計
 - `docs/webgpu-quality-enhancement.md` — WebGPU 品質向上の指針
+- `docs/projection-formulas.md` — 投影図法の数式リファレンス（projectionCPU/GPU の実装根拠）
 - `AGENTS.md` — リポジトリガイドライン（コミット規約、PR要件等）
 - `GEMINI.md` — プロジェクトコンセプトと技術スタックの概観
 - `plan.md` / `task.md` / `refactoring.md` — 開発フェーズと進行中タスク
