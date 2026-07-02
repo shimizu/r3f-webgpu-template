@@ -14,7 +14,9 @@
      「観測区間の何割地点を表示するか」を GPU 側で決められるようにする。
 
   4. compute shader 内で補間してから投影する
-     prev 値と current 値の間を blend で線形補間し、
+     playbackTime を観測データ全体の時間範囲（minTimestamp..maxTimestamp）へ写し、
+     各エンティティの観測区間の何割地点かを blend として求める。
+     経度は日付変更線をまたぐ最短経路（Δlon を ±180° に正規化）で補間し、
      その補間結果を Projection Pass と同じ考え方で world 座標へ変換する。
 
   5. init / update
@@ -22,7 +24,7 @@
      再生時刻や view に応じて補間済み位置を更新する。
 
   6. destroy
-     compute ノードを破棄して GPU リソースを片付ける。
+     compute ノードと StorageBufferAttribute の GPU バッファを破棄して片付ける。
 
   つまりこのファイルは、
   「移動体の前回位置と現在位置のあいだを GPU で補間する」
@@ -44,10 +46,37 @@ import {
 
 import { projectLonLatGPU } from '../gis/projectionGPU'
 import { createProjectionUniforms } from '../gis/projectionUniforms'
+import { disposeStorageAttributes } from './disposeStorageAttributes'
 import { OBSERVATION_OFFSET, OBSERVATION_STRIDE } from './observationLayout'
 
 const WORKGROUP_SIZE = 64
 const DEG2RAD = Math.PI / 180
+// timestamp 区間がゼロ（prev と current が同時刻）の個体で 0 除算しないための下限
+const MIN_TIMESTAMP_SPAN = 1e-6
+
+// 観測バッファ全体の timestamp 範囲を CPU 側で 1 回だけ走査して求める。
+// playbackTime(0..loopDuration) をこの範囲へ写すことで、
+// 個体ごとに異なる観測区間を持つデータでも再生タイムラインが共通になる
+function scanTimestampRange(rawObservationBuffer, entityCount) {
+  let min = Infinity
+  let max = -Infinity
+
+  for (let index = 0; index < entityCount; index += 1) {
+    const baseIndex = index * OBSERVATION_STRIDE
+    const prevTimestamp = rawObservationBuffer[baseIndex + OBSERVATION_OFFSET.prevTimestamp]
+    const timestamp = rawObservationBuffer[baseIndex + OBSERVATION_OFFSET.timestamp]
+    if (prevTimestamp < min) min = prevTimestamp
+    if (timestamp > max) max = timestamp
+  }
+
+  if (!Number.isFinite(min) || !Number.isFinite(max)) {
+    return { min: 0, max: 1 }
+  }
+  if (max <= min) {
+    return { min, max: min + 1 }
+  }
+  return { min, max }
+}
 
 export function createInterpolationPass(rawObservationBuffer, options = {}) {
   // 補間も compute shader で回すので、WebGPU 前提。
@@ -57,6 +86,7 @@ export function createInterpolationPass(rawObservationBuffer, options = {}) {
 
   const entityCount = rawObservationBuffer.length / OBSERVATION_STRIDE
   const projUniforms = createProjectionUniforms(options)
+  const timestampRange = scanTimestampRange(rawObservationBuffer, entityCount)
 
   // 入力は「現在観測値と 1 つ前の観測値が一緒に入ったバッファ」。
   // 出力は「今この瞬間に描画すべき補間済み位置」。
@@ -88,6 +118,8 @@ export function createInterpolationPass(rawObservationBuffer, options = {}) {
 
   const playbackTimeNode = uniform(0)
   const loopDurationNode = uniform(options.loopDuration ?? 12)
+  const minTimestampNode = uniform(timestampRange.min)
+  const maxTimestampNode = uniform(timestampRange.max)
 
   // 毎フレームの compute で、前回観測値 -> 現在観測値の間を補間してから投影する。
   // これにより CPU が各個体の座標更新を持たなくても動きが出せる。
@@ -115,17 +147,22 @@ export function createInterpolationPass(rawObservationBuffer, options = {}) {
       .toVar()
 
     // playbackTime は 0..loopDuration の実時間。
-    // それを観測 timestamp の区間へ写して、何割進んだかを blend にする。
+    // それを観測データ全体の timestamp 範囲（min..max）へ写し、
+    // 各エンティティの観測区間（prevTimestamp..timestamp）の何割地点かを blend にする。
+    // 区間外は clamp されるので、観測区間が短い個体は先に到着して止まる
     const normalizedPlayback = playbackTimeNode.div(loopDurationNode).toVar()
-    const playbackTimestamp = mix(prevTimestamp, timestamp, normalizedPlayback).toVar()
-    const timestampSpan = timestamp.sub(prevTimestamp).toVar()
+    const playbackTimestamp = mix(minTimestampNode, maxTimestampNode, normalizedPlayback).toVar()
+    const timestampSpan = timestamp.sub(prevTimestamp).max(MIN_TIMESTAMP_SPAN).toVar()
     const blend = clamp(
       playbackTimestamp.sub(prevTimestamp).div(timestampSpan),
       float(0),
       float(1)
     ).toVar()
 
-    const currentLon = mix(prevLon, lon, blend).toVar()
+    // 経度は日付変更線をまたぐ最短経路で補間する。
+    // Δlon を ±180° に正規化（TSL の mod は floor ベースで結果が常に非負）してから prevLon に加算する
+    const lonDelta = lon.sub(prevLon).add(180).mod(360).sub(180).toVar()
+    const currentLon = prevLon.add(lonDelta.mul(blend)).toVar()
     const currentLat = mix(prevLat, lat, blend).toVar()
     const projected = projectLonLatGPU(currentLon, currentLat, projUniforms, projUniforms.projectionType).toVar()
 
@@ -164,8 +201,14 @@ export function createInterpolationPass(rawObservationBuffer, options = {}) {
       renderer.compute(computeNode)
     },
 
-    destroy() {
+    destroy(renderer) {
       computeNode.dispose()
+      // standalone な StorageBufferAttribute は renderer 側に解放を依頼する
+      disposeStorageAttributes(renderer, [
+        rawObservationAttribute,
+        projectedPositionAttribute,
+        headingAttribute,
+      ])
     },
   }
 }

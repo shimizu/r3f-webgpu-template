@@ -188,7 +188,7 @@ function RainLayer({
     systemRef.current = resources.system
 
     return () => {
-      resources.system.destroy()
+      resources.system.destroy(renderer)
       resources.rainGeometry.dispose()
       resources.rainMaterial.dispose()
       resources.splashGeometry.dispose()

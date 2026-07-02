@@ -16,10 +16,11 @@ export function createMockObservationBuffer(entityCount) {
   for (let index = 0; index < entityCount; index += 1) {
     const baseIndex = index * OBSERVATION_STRIDE
     const isAircraft = index % 9 === 0
-    // テスト用: 全エンティティが lon 180 → -180 に西進する
+    // テスト用: 全エンティティが lon -170 → 170 へ日付変更線をまたいで西進する
+    // （補間パスの Δlon ±180° 正規化により、0° 経由ではなく 180° 経由の最短経路になる）
     const latBase = -90 + hash01(index * 0.17 + 2.1) * 180
-    const prevLon = 180
-    const lon = -180
+    const prevLon = -170
+    const lon = 170
     const prevLat = latBase
     const lat = latBase
     const alt = isAircraft ? 2800 + hash01(index * 0.43 + 4.2) * 9000 : 0

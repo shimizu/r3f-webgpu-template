@@ -136,7 +136,7 @@ function MovingEntitiesLayer({ entityCount }) {
     return () => {
       resources.geometry.dispose()
       resources.material.dispose()
-      resources.system.destroy()
+      resources.system.destroy(renderer)
       systemRef.current = null
     }
   }, [renderer, resources])
