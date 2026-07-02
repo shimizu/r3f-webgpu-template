@@ -59,7 +59,7 @@ function Scene({ entityCount = 2000 }) {
       {/* ポストプロセッシング (Bloom + Tilt-Shift) */}
       {/*<SceneEffects />*/}
 
-      {/* Preetham モデルによる動的な空の描画 */}
+      {/* 室内・卓上トーンの空ドーム（静的グラデーション + fBM 雲） */}
       <SkyLayer />
 
       {/* 地図閲覧に適したカメラ操作（左ドラッグで移動、右ドラッグで回転） */}

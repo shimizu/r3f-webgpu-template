@@ -14,7 +14,7 @@
 
 **Phase A（ジオラマ + GIS の空間統合）まで完了。**
 
-- ジオラマ基盤（空・床・照明・水系・Bloom + TiltShift）、地形（TerrainLayer）、GIS（GeojsonLayer / MovingEntitiesLayer / GPU 投影・補間）は実装済み
+- ジオラマ基盤（空・床・照明・水系・体積雲・Bloom + TiltShift）、地形（TerrainLayer）、GIS（GeojsonLayer / MovingEntitiesLayer / GPU 投影・補間）は実装済み
 - `<Coordinate>` 投影コンテキストにより DEM 地形と GeoJSON が同一投影平面に自動整合する（HORMUZ_VIEW で稼働中）。投影は CPU（`projectionCPU.js`、ジオメトリ焼き込み用）と GPU（`projectionGPU.js`、TSL）で同一数式を共有
 - 実装の詳細は CLAUDE.md、既知の課題と改善タスクは review.md を参照
 
@@ -64,6 +64,7 @@ RainLayer の GPU パーティクル + 地形衝突パターンは、GIS パー�
 
 ### 天候レイヤー
 
+- CloudLayer — TSL raymarching による体積雲（cumulus / stratus / cirrus）
 - RainLayer — GPU 雨パーティクル + 地形衝突スプラッシュ
 
 ### GIS レイヤー

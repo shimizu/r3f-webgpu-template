@@ -12,6 +12,7 @@
 
 - **M1（GPU 投影で大量移動体を表示）/ M2（GPU 補間で移動を再生）は達成済み**（`createInterpolationPass.js` + `MovingEntitiesLayer.jsx` + `mockObservations.js`、件数は leva で実行時調整可）。旧タスク 0〜6（compute 基盤分割、バッファ仕様 = `observationLayout.js`、Projection Pass、projected state 参照描画、ダミーデータ、Interpolation Pass、Base Map Layer = `GeojsonLayer.jsx`）も完了のため削除
 - **旧 M5（集約 / LOD 表示）は plan.md の方針転換で対象外**となったため削除
+- **補間パスの既知バグ解消（旧タスク0 = review.md H1/H2）は完了**（日付変更線対応・timestamp 修正・GPU バッファ解放）のため削除
 
 ## マイルストーン
 
@@ -30,23 +31,6 @@
 - 移動体レイヤーと同じ地図空間で重ねて表示できる
 
 ## 実装タスク
-
-## 0. 補間パスの既知バグを解消する（前提タスク）
-
-優先度: P0
-
-トレイルは補間パスの出力を土台にするため、着手前に review.md の High タスクを潰す。
-
-作業:
-
-- 日付変更線をまたぐ lon 補間の修正（H2）
-- timestamp 機構の恒等式化・0 除算の修正（H2）
-- compute 系 `destroy()` の StorageBufferAttribute 解放（H1）
-
-完了条件:
-
-- antimeridian をまたぐ移動体が正しい方向に動く
-- レイヤーのマウント/アンマウント繰り返しで GPU メモリが増え続けない
 
 ## 1. GPU トレイルを実装する
 
@@ -141,12 +125,11 @@ FPS は `FpsStats.jsx`（stats-gl）で表示済み。残りの項目を確認�
 
 推奨順序:
 
-1. 補間パスのバグ解消（review.md H1 / H2）
-2. Trail Update Pass + TrailLayer
-3. ベクトル場データ仕様策定
-4. Vector Field Advection Pass + FlowFieldLayer
-5. デバッグ HUD
-6. パフォーマンス検証
+1. Trail Update Pass + TrailLayer
+2. ベクトル場データ仕様策定
+3. Vector Field Advection Pass + FlowFieldLayer
+4. デバッグ HUD
+5. パフォーマンス検証
 
 ## 完了の定義
 

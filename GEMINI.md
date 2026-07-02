@@ -15,21 +15,21 @@ The project shifts away from traditional flat map SDKs toward a "boxed world" ex
 - **Renderer**: Three.js `WebGPURenderer`
 - **Shader Language**: Three Shading Language (TSL) / WGSL
 - **Build Tool**: Vite 8
-- **GIS Utilities**: `geotiff` (for DEM), `chroma-js` (for coloring)
+- **GIS Utilities**: `geotiff` (for DEM), `earcut` (polygon triangulation)
 - **UI**: `leva` (for live parameter tuning)
 
 ## Architecture & Directory Structure
 - `src/App.jsx`: Entry point; initializes the `WebGPURenderer` and R3F `Canvas`.
 - `src/Scene.jsx`: The composition root; assembles lighting, environment, and all visual layers.
 - `src/layers/`: React components representing individual visual elements.
-    - **Environment**: `SkyLayer` (atmospheric scattering), `GridLayer` (diorama floor), `StageLayer`.
+    - **Environment**: `SkyLayer` (static gradient + fBM clouds, tabletop tone), `GridLayer` (diorama floor), `StageLayer`.
     - **Simulation**: `WaterBoxLayer`, `WaterBlobLayer`, `WaterOceanLayer` (TSL-based water simulations).
     - **GIS**: `GeojsonLayer` (vector maps), `MovingEntitiesLayer` (interpolated GPU particles).
-    - **Weather/Terrain**: `TerrainLayer` (GeoTIFF-based 3D mesh), `RainLayer` (GPU particles with collision).
+    - **Weather/Terrain**: `TerrainLayer` (GeoTIFF-based 3D mesh), `CloudLayer` (TSL raymarched volumetric clouds: cumulus / stratus / cirrus), `RainLayer` (GPU particles with collision).
 - `src/compute/`: TSL-based compute shader definitions.
-    - `createProjectionPass.js`: Lon/Lat to XY projection on GPU.
-    - `createInterpolationPass.js`: Temporal interpolation for moving entities.
+    - `createInterpolationPass.js`: Temporal interpolation + projection for moving entities (dateline-aware).
     - `runRainCompute.js`: Physics, wind field (FBM), and terrain collision logic.
+    - `disposeStorageAttributes.js`: GPU buffer release helper called from each pass's `destroy(renderer)`.
 - `src/gis/`: Logic for projections (`projectionGPU.js`), view settings (`views.js`), and coordinate transforms.
 - `docs/`: Technical specifications for the particle system, projection unification, and WebGPU quality.
 
@@ -46,7 +46,7 @@ The project shifts away from traditional flat map SDKs toward a "boxed world" ex
 - **Project Scope**: Refer to `plan.md` for current development phases (Phase A-E) and `task.md` for specific to-dos.
 - **No Map SDKs**: Avoid importing large map libraries (Mapbox, Leaflet). Implement required GIS logic from scratch or using lightweight utilities.
 
-## Current Focus (Phase A/B)
-- Integrating Terrain (DEM) with GIS particles.
-- Unifying projection logic entirely on the GPU.
+## Current Focus (Phase B/C)
+- Phase A (spatial integration of terrain + GIS via the `<Coordinate>` projection context) is complete.
+- Terrain-linked GIS particles (entities following terrain height / sea surface).
 - Implementing GPU-based trails for moving entities.
