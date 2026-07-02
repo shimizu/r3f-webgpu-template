@@ -18,6 +18,7 @@ import { HORMUZ_VIEW } from './gis/views'
 import GeojsonLayer from './layers/GeojsonLayer'
 import MovingEntitiesLayer from './layers/MovingEntitiesLayer'
 import TerrainLayer from './layers/TerrainLayer'
+import CloudLayer from './layers/CloudLayer'
 import Labels3DLayer from './layers/Labels3DLayer'
 
 // 移動体モックの生成域（hormuz.tif の bbox 45.85〜65.19 / 21.90〜32.12 の内側）。
@@ -96,6 +97,25 @@ function Scene({ entityCount = 2000 }) {
           position={[0, 0.5, 0]}
         />
       )}
+
+      {/* 体積雲: 低層の積雲（地形フットプリントよりひと回り大きく） */}
+      <CloudLayer
+        width={24}
+        depth={15}
+        thickness={2.5}
+        coverage={0.45}
+        type='cumulus'
+        position={[0, 6, 0]}
+      />
+      {/* 体積雲: 高層の巻雲（薄く広く、レイヤー重ねのデモ） */}
+      <CloudLayer
+        width={32}
+        depth={22}
+        thickness={1.2}
+        coverage={0.35}
+        type='cirrus'
+        position={[0, 10, 0]}
+      />
 
       {/* HTML ラベル */}
       <Labels3DLayer />
