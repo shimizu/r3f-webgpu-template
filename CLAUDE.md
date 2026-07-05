@@ -73,6 +73,7 @@ CPU(受信・パック) → GPU(投影・補間) → Draw(インスタンス描�
 - `TerrainLayer` — GeoTIFF (DEM) ベースの 3D 地形メッシュ
 - `CloudLayer` — TSL raymarching による体積雲（cumulus / stratus / cirrus の3プリセット、範囲・coverage・厚みを props 指定）。GPU 負荷が高いので steps は控えめに（TDR 注意、既定構成は steps≈12）
 - `RainLayer` — GPU パーティクルの降雨（地形衝突あり）
+- `SnowLayer` — GPU パーティクルの降雪（RainLayer 派生。低速落下 + 強い横流され + 着地静止フェード。雪トグルで TerrainLayer の堆積も時定数駆動）
 - `GeojsonLayer` — GeoJSON ベクター地図描画
 - `MovingEntitiesLayer` — GPU 移動体（船舶・航空機）の補間描画
 - `Labels3DLayer` — drei `<Html>` による 3D 空間内の HTML ラベル（地名等）
@@ -91,7 +92,8 @@ WebGPU ネイティブの後処理パイプライン:
 ### GPU コンピュート（`src/compute/`）
 
 - `createInterpolationPass.js` — GIS エンティティの補間 + 投影コンピュートパス（MovingEntitiesLayer が使用）。日付変更線をまたぐ最短経路補間に対応
-- `runRainCompute.js` — 降雨パーティクルの物理・風場・地形衝突。新しい災害パーティクル（雪・火の粉等）はこれをテンプレートにコピーベースで派生させる
+- `runRainCompute.js` — 降雨パーティクルの物理・風場・地形衝突。新しい災害パーティクル（火の粉等）はこれをテンプレートにコピーベースで派生させる
+- `runSnowCompute.js` — 降雪パーティクル（rain 派生の実例。スプラッシュなし、rest バッファで着地静止 + フェード）
 - `particleBuffers.js` — パーティクル用 StorageBuffer 群の生成/破棄の定型（`createParticleBuffers(count, fields)` → `{ attributes, nodes, dispose }`）。新パーティクル系はこれを使うこと
 - `src/tsl/windField.js` — 3D ノイズ風場の共有 Fn（`createWindField()` → `windAt(pos, time)`）。雨・雪・火の粉で共有。竜巻の vortex 項はここに追加予定
 - `disposeStorageAttributes.js` — compute 専用 StorageBufferAttribute の GPU バッファ解放ヘルパー。各パスの `destroy(renderer)` から呼ぶ（新パスを作る場合も必ず組み込むこと）

@@ -487,7 +487,8 @@ function TerrainLayer({
   wetRiseTime = 1.5, // 濡れの立ち上がり時定数（秒。降り始めは速め）
   wetFallTime = 8, // 乾きの時定数（秒。止んだ後はゆっくり乾く）
   // --- 堆積（雪/苔）: 既定は雪プリセット、amount 0 で OFF ---
-  snowAmount = 0, // マスター量 0..1（0 = 堆積なし）
+  snowAmount = 0, // 手動のマスター量 0..1（leva スライダー。即時反映）
+  snowing = false, // 降雪中フラグ。ON の間は時定数でゆっくり積もり、OFF 後はゆっくり融ける
   snowLine = 0.55, // 堆積が始まる正規化標高
   snowBand = 0.15, // 雪線の遷移幅
   snowAspect = 0.15, // 北斜面が実効的に雪線を下げる量
@@ -496,6 +497,9 @@ function TerrainLayer({
   snowRoughness = 0.9, // 堆積面の roughness（雪はマット）
   snowNormalFlatten = 0.5, // 法線を上方向へ寄せる強さ
   snowPatchScale = 0.4, // 堆積パッチの空間周波数
+  snowRiseTime = 40, // 積雪の立ち上がり時定数（秒。降雪中にゆっくり積もる）
+  snowFallTime = 240, // 融雪の時定数（秒。降り止んだ後は非常にゆっくり消える）
+  snowDriveMax = 0.9, // 降雪駆動が到達する堆積量の上限
 }) {
   const [demData, setDemData] = useState(null)
   const [texMap, setTexMap] = useState(null)
@@ -539,9 +543,9 @@ function TerrainLayer({
     wetUniforms.scale.value = wetScale
   }, [wetUniforms, wetDarken, wetRoughness, wetScale])
 
-  // 堆積パラメータ（すべて即時反映。時定数追従は不要）
+  // 堆積パラメータ（amount 以外は見た目パラメータなので即時反映。
+  // amount は下の useFrame で時定数追従する）
   useEffect(() => {
-    accUniforms.amount.value = snowAmount
     accUniforms.snowLine.value = snowLine
     accUniforms.band.value = snowBand
     accUniforms.aspect.value = snowAspect
@@ -552,7 +556,6 @@ function TerrainLayer({
     accUniforms.color.value.set(snowColor)
   }, [
     accUniforms,
-    snowAmount,
     snowLine,
     snowBand,
     snowAspect,
@@ -568,14 +571,32 @@ function TerrainLayer({
   // 毎フレーム uniform の .value を更新するだけなので React 再レンダーは起こさない
   const wetTargetRef = useRef(wetness)
   wetTargetRef.current = wetness
+  // 積雪の降雪駆動分。snowing 中は snowDriveMax へゆっくり積もり、
+  // 止んだ後は非常にゆっくり融ける。手動 snowAmount（leva）は即時反映で、
+  // 最終的な堆積量は max(手動, 降雪駆動)
+  const snowDriveRef = useRef(0)
+  const snowingRef = useRef(snowing)
+  snowingRef.current = snowing
+  const snowAmountRef = useRef(snowAmount)
+  snowAmountRef.current = snowAmount
   useFrame((_, delta) => {
     const dt = Math.min(delta || 1 / 60, 0.1) // タブ復帰後の巨大 dt をクランプ
     const cur = wetUniforms.coverage.value
     const target = wetTargetRef.current
-    if (Math.abs(target - cur) < 1e-4) return
-    const tau = target > cur ? wetRiseTime : wetFallTime
-    const k = 1 - Math.exp(-dt / Math.max(tau, 1e-3)) // フレームレート非依存
-    wetUniforms.coverage.value = cur + (target - cur) * k
+    if (Math.abs(target - cur) >= 1e-4) {
+      const tau = target > cur ? wetRiseTime : wetFallTime
+      const k = 1 - Math.exp(-dt / Math.max(tau, 1e-3)) // フレームレート非依存
+      wetUniforms.coverage.value = cur + (target - cur) * k
+    }
+
+    const driveTarget = snowingRef.current ? snowDriveMax : 0
+    const drive = snowDriveRef.current
+    if (Math.abs(driveTarget - drive) >= 1e-4) {
+      const tau = driveTarget > drive ? snowRiseTime : snowFallTime
+      const k = 1 - Math.exp(-dt / Math.max(tau, 1e-3))
+      snowDriveRef.current = drive + (driveTarget - drive) * k
+    }
+    accUniforms.amount.value = Math.max(snowAmountRef.current, snowDriveRef.current)
   })
 
   // <Coordinate> 配下なら投影モード（bbox + view から位置・スケールを自動決定）
