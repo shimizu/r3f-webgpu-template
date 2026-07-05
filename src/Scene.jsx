@@ -136,7 +136,7 @@ function SceneContent({ entityCount = 2000 }) {
           （条件マウントにすると全マテリアル再コンパイルが走る）。
           雨天時は雨量に応じて視程が自動で下がる */}
       <HeightFogLayer
-        density={Math.max(fogAmount, rain ? rainIntensity * 0.35 : 0)}
+        density={Math.max(fogAmount, rain ? rainIntensity * 0.2 : 0)}
         baseY={0.5}
       />
 

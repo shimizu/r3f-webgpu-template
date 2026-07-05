@@ -17,8 +17,8 @@ import { createHeightFogFactor } from '../tsl/heightFog'
 */
 
 // density prop (0..1) → 実際の指数フォグ係数への変換。
-// 1.0 で距離 20 units の透過率が 2 割程度になる濃さ
-const FOG_DENSITY_SCALE = 0.08
+// 1.0 で距離 25 units の透過率が 4 割弱になる濃さ（ジオラマの視程を潰さない範囲）
+const FOG_DENSITY_SCALE = 0.04
 
 function HeightFogLayer({
   density = 0, // 0..1（0 = 無効）
