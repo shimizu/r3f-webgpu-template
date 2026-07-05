@@ -7,7 +7,7 @@
 DEM url・bbox・投影ビュー・海面標高・地形パラメータ・ラベル・移動体生成域を
 地域ごとに 1 オブジェクトへまとめる。Scene は leva「地域」セレクタで REGIONS から
 1 つ選び、各レイヤーへ配線するだけになる（Scene から地域固有のマジックナンバーを排除）。
-現在 `hormuz`（ホルムズ海峡）と `taiwan`（台湾）を登録済み。
+現在 `hormuz`（ホルムズ海峡）・`taiwan`（台湾）・`fuji`（富士山周辺）を登録済み。
 
 ## リージョン定義の構造
 
@@ -22,7 +22,11 @@ REGIONS.hormuz = {
     altitudeScale, sampleLonStep, sampleLatStep, projectionType,
   },
   seaLevel: 0.19,                 // 正規化海面標高（lookdev 調整値。0m の物理値ではない）
-  terrain: { smooth, heightScale, baseHeight }, // TerrainLayer の形状パラメータ
+  terrain: { smooth, heightScale, baseHeight,
+    elevationStops },             // TerrainLayer の形状 + 標高カラー境界（オプショナル。
+                                  // 単独ピーク DEM の色帯調整用。fuji が実例）
+  landcoverUrl: './landcover/xxx.tif', // 土地被覆 GeoTIFF（オプショナル。持つ region だけ書く。
+                                  // 地形配色・草木の散布先が連動。LandCoverContext.md 参照）
   cloudHeight: 5,                 // 雲・雷・竜巻の基準高さ
   labels: [{ id, text, position }], // Labels3DLayer 用の地名
   entityRegion: { lonMin, ..., lonDrift } | null, // MovingEntitiesLayer のモック生成域
@@ -69,6 +73,8 @@ const footprint = useMemo(() => regionFootprint(region), [region])
      min..max 正規化基準。物理 0m とはずれる）
 4. 地域切替時の注意: Scene は `key={region.id}` で TerrainLayer を再マウントし、
    `setHeightInfo(null)` で旧地形の高さ場を破棄する（既に配線済み）
+5. （任意）土地被覆 GeoTIFF（EPSG:4326、DEM と同範囲推奨）を `public/landcover/` に
+   置いて `landcoverUrl` を追加すると、地形配色と草木の散布先が土地被覆に連動する
 
 ## 調整のポイント
 

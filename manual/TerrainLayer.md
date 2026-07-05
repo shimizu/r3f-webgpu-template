@@ -4,7 +4,7 @@ GeoTIFF (DEM) から 3D 地形メッシュを生成し、標高カラー・濡�
 
 ## 概要
 
-GeoTIFF 形式の DEM（数値標高モデル）を読み込み、上面・側面・底面を持つ箱型の地形メッシュを構築する。標高に応じたカラーグラデーション（深海〜山頂）またはテクスチャで着色し、`<Coordinate>` 配下では bbox と view から自動でサイズ・位置を決定して他の GPU 投影レイヤー（GeojsonLayer 等）と整合する。降雨連動の「濡れ」、降雪連動の「堆積（雪/苔）」、山火事の「延焼」を uniform 駆動で重ねられる（値変更でシェーダ再コンパイルは走らない）。地形の高さバッファ（heightInfo）を `onHeightData` で外部に発行し、草・雨などの接地・衝突判定に共有する。
+GeoTIFF 形式の DEM（数値標高モデル）を読み込み、上面・側面・底面を持つ箱型の地形メッシュを構築する。標高に応じたカラーグラデーション（深海〜山頂）またはテクスチャで着色し、`<Coordinate>` 配下では bbox と view から自動でサイズ・位置を決定して他の GPU 投影レイヤー（GeojsonLayer 等）と整合する。region に土地被覆データ（`landcoverUrl`、LandCoverContext）があればクラス別のパレット配色（森林=緑・市街地=グレー・水域=水深 mix 等）が標高カラーより優先される（BASE 色の優先順位: `texture` prop > 土地被覆 > 標高 stops）。降雨連動の「濡れ」、降雪連動の「堆積（雪/苔）」、山火事の「延焼」を uniform 駆動で重ねられる（値変更でシェーダ再コンパイルは走らない）。地形の高さバッファ（heightInfo）を `onHeightData` で外部に発行し、草・雨などの接地・衝突判定に共有する。
 
 ## 前提・依存
 
@@ -16,6 +16,9 @@ GeoTIFF 形式の DEM（数値標高モデル）を読み込み、上面・側�
   - `wetness` は RainLayer の雨量と連動（Scene では `deriveLayerInputs` の `wetnessTarget`）
   - `snowing` は SnowLayer の降雪と連動
   - `fireIgnition` / `fireRadius` は FireLayer / SmokeLayer と同じ発火点・半径を共有
+  - `LandCoverProvider` 配下で土地被覆があれば、DEM uv → 土地被覆 uv の bbox 間 affine で
+    nearest サンプルしてクラス別配色（詳細は [LandCoverContext](./LandCoverContext.md)）。
+    濡れ・堆積・延焼は土地被覆色の上にも従来どおり乗る
 
 ## Props（基本）
 

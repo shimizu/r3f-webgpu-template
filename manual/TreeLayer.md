@@ -73,6 +73,10 @@ const { showTrees, treePlacement } = useControls('木', {
 - マスク外・生育帯外の木はスケール 0 に潰れて消える（頂点は処理されるが描画負荷ほぼゼロ）
 - `castShadow` は数千本規模ではオンにできるが、密度最大 + ポストFX 併用時は負荷に注意
 - 配置は mulberry32 シード PRNG で決定的（リロードで同じ森が再現される）
+- `terrain=true` で region に土地被覆データ（LandCoverContext）があれば、散布時の
+  rejection sampling で trees クラスにのみ配置される（市街地・湖・裸地に生えない）。
+  coverageMask はクラス内の疎密、標高帯マスクは森林限界として従来どおり合成。
+  ロード中はマウント保留。データの無い region は従来の無条件散布と bit 同一
 
 ## 関連
 

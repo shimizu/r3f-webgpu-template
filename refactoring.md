@@ -44,6 +44,18 @@
 
 `createProjectionPass.js` / `runBarsCompute.js`（補間パスに置換済み）、`createDof.js` / `createGodrays.js`（コメントアウト中）、`backup_Scene.jsx`、未使用の `StudioEnvironment.jsx`（IBL として有効化する価値あり、review.md M2 参照）の去就を決める。
 
+## 5. 土地被覆 rejection 散布の共通化
+
+`GrassLayer` / `TreeLayer` の散布ループに同型の rejection sampling（土地被覆クラス外の
+座標引き直し、MAX_TRIES=200）がインラインで 2 箇所ある。3 箇所目（BuildingLayer 等の
+建物配置）が生えた段階で `src/gis/landcover.js` にヘルパー
+（例: `scatterOnClasses(rand, count, areaX, areaZ, classAtWorld, classes)`）として共通化する。
+2 箇所のうちは早すぎる抽象化を避けてインライン維持。
+なお建物は built クラスが面積 2 割あるため、ランダム散布より「画素グリッド走査 +
+ジッタ（1 画素 1 建物）」が向く可能性が高い。`useLandCover().info`（CPU 生グリッド）と
+`worldToLonLat` は公開済みなので、`collectClassCells(info, [LC.BUILT])` のような
+ユーティリティを足すだけで実装できる。
+
 ## 結論
 
 現時点で必要なのは大規模な作り直しではない。次の順で進めると Phase B 以降の実装追加で破綻しにくい。
