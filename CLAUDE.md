@@ -91,7 +91,9 @@ WebGPU ネイティブの後処理パイプライン:
 ### GPU コンピュート（`src/compute/`）
 
 - `createInterpolationPass.js` — GIS エンティティの補間 + 投影コンピュートパス（MovingEntitiesLayer が使用）。日付変更線をまたぐ最短経路補間に対応
-- `runRainCompute.js` — 降雨パーティクルの物理・風場（FBM）・地形衝突
+- `runRainCompute.js` — 降雨パーティクルの物理・風場・地形衝突。新しい災害パーティクル（雪・火の粉等）はこれをテンプレートにコピーベースで派生させる
+- `particleBuffers.js` — パーティクル用 StorageBuffer 群の生成/破棄の定型（`createParticleBuffers(count, fields)` → `{ attributes, nodes, dispose }`）。新パーティクル系はこれを使うこと
+- `src/tsl/windField.js` — 3D ノイズ風場の共有 Fn（`createWindField()` → `windAt(pos, time)`）。雨・雪・火の粉で共有。竜巻の vortex 項はここに追加予定
 - `disposeStorageAttributes.js` — compute 専用 StorageBufferAttribute の GPU バッファ解放ヘルパー。各パスの `destroy(renderer)` から呼ぶ（新パスを作る場合も必ず組み込むこと）
 - `observationLayout.js` — 観測データレイアウト定義。`OBSERVATION_STRIDE = 12` floats/エンティティ: lon, lat, alt, timestamp, prevLon, prevLat, prevAlt, prevTimestamp, speed, heading, type, status
 - `src/data/mockObservations.js` — 開発用のモック観測データ（`region` オプションで生成域を限定可能）
