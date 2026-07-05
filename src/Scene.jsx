@@ -3,7 +3,6 @@ import { useControls } from 'leva'
 import { MapControls } from '@react-three/drei'
 
 import LightingRig from './LightingRig'
-// eslint-disable-next-line no-unused-vars
 import SceneEffects from './effects/SceneEffects'
 // eslint-disable-next-line no-unused-vars
 import MaterialSamplesLayer from './layers/MaterialSamplesLayer'
@@ -50,13 +49,16 @@ const SEA_LEVEL = 0.19
 // eslint-disable-next-line no-unused-vars
 function Scene({ entityCount = 2000 }) {
   const [heightInfo, setHeightInfo] = useState(null)
-  const { showOcean, grassPlacement } = useControls({
+  const { showOcean, grassPlacement, postfx } = useControls({
     showOcean: { value: true, label: '海面を表示' },
     grassPlacement: {
       value: 'terrain',
       options: { '地形(DEM)': 'terrain', 'ステージ床': 'floor', 'なし': 'none' },
       label: '草の配置',
     },
+    // ポストFX（Bloom + Tilt-Shift + Film Grade）。GPU 負荷が高く TDR の
+    // リスクがあるため既定オフ（steps≈12 の雲と併用時は特に注意）
+    postfx: { value: false, label: 'ポストFX' },
   })
   const { wetness, cloudType, cloudCoverage, cloudQuality } = useControls('天候', {
     wetness: { value: 0, min: 0, max: 1, step: 0.01, label: '地面の濡れ' },
@@ -78,8 +80,9 @@ function Scene({ entityCount = 2000 }) {
       {/* 太陽光や環境光を一括管理するリグ */}
       <LightingRig />
 
-      {/* ポストプロセッシング (Bloom + Tilt-Shift) */}
-      {/*<SceneEffects />*/}
+      {/* ポストプロセッシング (Bloom + Tilt-Shift + Film Grade)。
+          マウント時は R3F の自動描画から手動パイプライン描画に切り替わる */}
+      {postfx && <SceneEffects />}
 
       {/* 室内・卓上トーンの空ドーム（静的グラデーション + fBM 雲） */}
       <SkyLayer />
