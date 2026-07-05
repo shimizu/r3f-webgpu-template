@@ -16,11 +16,14 @@ import {
   transformNormalToView,
   uniform,
   uv,
+  vec2,
   vec3,
 } from 'three/tsl'
 import { fromArrayBuffer } from 'geotiff'
 
 import { useProjectionMaybe } from '../gis/CoordinateContext'
+import { useLandCover } from '../gis/LandCoverContext'
+import { demUvToLcUvCoeffs, DEFAULT_LC_PALETTE } from '../gis/landcover'
 import { projectLonLatCPU } from '../gis/projectionCPU'
 import { coverageMask } from '../tsl/coverageMask'
 import { createBurnField } from '../tsl/burnField'
@@ -51,8 +54,10 @@ const DEFAULT_COLORS = {
 // patchScale/edge/seed/color/roughness/flatten）。
 // burn は延焼の uniform セット（ignition/radius/band/noiseScale/noiseAmount/seed/
 // scorchColor/glowColor/glowStrength。burnField.js の解析近似）。
+// landCover は土地被覆配色セット（texture: nearest DataTexture、su/ou/sv/ov:
+// DEM uv → 土地被覆 uv の affine 係数、uniforms: palette 9 色 + 陰影変調）。
 // いずれも呼び出し側が保持して .value 更新するので、スライダー操作で再コンパイルは走らない
-function createTerrainMaterial(colors, texMap, seaLevel = 0, stops = ELEVATION_STOPS, wet = null, acc = null, burn = null) {
+function createTerrainMaterial(colors, texMap, seaLevel = 0, stops = ELEVATION_STOPS, wet = null, acc = null, burn = null, landCover = null) {
   const material = new MeshPhysicalNodeMaterial({
     roughness: TERRAIN_MATERIAL.roughness,
     metalness: TERRAIN_MATERIAL.metalness,
@@ -125,6 +130,32 @@ function createTerrainMaterial(colors, texMap, seaLevel = 0, stops = ELEVATION_S
     const texNode = texture(texMap)
     const texColor = texNode.sample(uv())
     material.colorNode = mix(applyBurn(applyAcc(applyWet(texColor))), sideColor, sideMask)
+  } else if (landCover) {
+    // 土地被覆配色: DEM uv → 土地被覆 uv（bbox 間 affine、両者とも v=1 が北）で
+    // nearest サンプルし、クラス値 (0..8) をパレット LUT で色に変換する。
+    // r8unorm + nearest なので mul(255).round() でクラス値が厳密に復元できる
+    const lcU = landCover.uniforms
+    const lcUv = uv().mul(vec2(landCover.su, landCover.sv)).add(vec2(landCover.ou, landCover.ov))
+    const classIdx = texture(landCover.texture).sample(lcUv).r.mul(255).round()
+
+    // water (0) のみ既存の水深 mix を使い、湖・海の深浅感を維持する
+    const waterColor = mix(color(colors.deepOcean), color(colors.shallowOcean),
+      smoothstep(float(stops[0]).add(float(seaLevel)), float(stops[1]).add(float(seaLevel)), elevation))
+
+    // クラス一致で 1、それ以外で 0 の窓関数の総和（クラス値は整数なので排他的）
+    const weightFor = (i) => float(1).sub(clamp(classIdx.sub(float(i)).abs(), 0, 1))
+    let lcColor = waterColor.mul(weightFor(0))
+    for (let i = 1; i < lcU.palette.length; i += 1) {
+      lcColor = lcColor.add(lcU.palette[i].mul(weightFor(i)))
+    }
+
+    // フラットな塗り絵回避: 標高で明度を変調 + 低振幅 fBM の色ムラ（いずれも uniform 駆動）
+    const shade = mix(lcU.shadeDark, lcU.shadeBright, elevation)
+    const mottle = valueFbm3(vec3(positionWorld.xz.mul(lcU.mottleScale), 7.7), 3)
+      .mul(lcU.mottleAmount)
+    const lcShaded = lcColor.mul(shade).mul(float(1).add(mottle))
+
+    material.colorNode = mix(applyBurn(applyAcc(applyWet(lcShaded))), sideColor, sideMask)
   } else {
     const s = float(seaLevel)
     const c1 = mix(color(colors.deepOcean), color(colors.shallowOcean),
@@ -534,6 +565,10 @@ function TerrainLayer({
   const [demData, setDemData] = useState(null)
   const [texMap, setTexMap] = useState(null)
 
+  // 土地被覆（LandCoverContext から共有取得）。region に landcoverUrl が無ければ
+  // texture=null のままで従来の標高 stops 配色にフォールバックする
+  const { texture: lcTexture, info: lcInfo } = useLandCover()
+
   // 濡れ uniform セット。生成は一度きりで、値の変更は .value 更新のみ
   // （マテリアル再コンパイルを走らせない）
   const wetUniforms = useMemo(
@@ -562,6 +597,19 @@ function TerrainLayer({
       color: uniform(new Color('#eef4ff')),
       roughness: uniform(0.9),
       flatten: uniform(0.5),
+    }),
+    []
+  )
+
+  // 土地被覆配色 uniform セット（生成一度きり、値は .value 更新のみ）。
+  // palette はクラス値 0..8 → albedo（0 water は水深 mix で置換されるプレースホルダ）
+  const lcUniforms = useMemo(
+    () => ({
+      palette: DEFAULT_LC_PALETTE.map((hex) => uniform(new Color(hex))),
+      shadeDark: uniform(0.85), // 低標高の明度係数
+      shadeBright: uniform(1.18), // 高標高の明度係数
+      mottleScale: uniform(1.6), // 色ムラ fBM の空間周波数
+      mottleAmount: uniform(0.08), // 色ムラの振幅（±）
     }),
     []
   )
@@ -762,7 +810,19 @@ function TerrainLayer({
     if (heightInfo && onHeightData) onHeightData(heightInfo)
   }, [heightInfo, onHeightData])
 
-  const material = useMemo(() => createTerrainMaterial(mergedColors, texMap, seaLevel, elevationStops, wetUniforms, accUniforms, burnUniforms), [mergedColors, texMap, seaLevel, elevationStops, wetUniforms, accUniforms, burnUniforms])
+  // 土地被覆配色セット。DEM が地理参照付き（bbox あり）のときのみ uv affine が
+  // 成立する。BASE 色の優先順位は texMap > landCover > 標高 stops（createTerrainMaterial）。
+  // texture 到着で 1 回だけ再コンパイルが走る（region 切替と同スケールの一度きりイベント）
+  const landCover = useMemo(() => {
+    if (!lcTexture || !lcInfo || !demData?.bbox) return null
+    return {
+      texture: lcTexture,
+      uniforms: lcUniforms,
+      ...demUvToLcUvCoeffs(demData.bbox, lcInfo.bbox),
+    }
+  }, [lcTexture, lcInfo, demData, lcUniforms])
+
+  const material = useMemo(() => createTerrainMaterial(mergedColors, texMap, seaLevel, elevationStops, wetUniforms, accUniforms, burnUniforms, landCover), [mergedColors, texMap, seaLevel, elevationStops, wetUniforms, accUniforms, burnUniforms, landCover])
 
   useEffect(() => {
     return () => {
