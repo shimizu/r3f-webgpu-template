@@ -27,6 +27,7 @@ import RainLayer from './layers/RainLayer'
 import SnowLayer from './layers/SnowLayer'
 import HeightFogLayer from './layers/HeightFogLayer'
 import LightningLayer from './layers/LightningLayer'
+import TornadoLayer from './layers/TornadoLayer'
 import TerrainLayer from './layers/TerrainLayer'
 import CloudLayer from './layers/CloudLayer'
 import Labels3DLayer from './layers/Labels3DLayer'
@@ -79,6 +80,7 @@ function SceneContent({ entityCount = 2000 }) {
     snow,
     fogAmount,
     lightningRate,
+    tornadoStrength,
     floodLevel,
     wetness,
     cloudType,
@@ -90,6 +92,7 @@ function SceneContent({ entityCount = 2000 }) {
     snow: { value: false, label: '雪' },
     fogAmount: { value: 0, min: 0, max: 1, step: 0.01, label: '霧' },
     lightningRate: { value: 0, min: 0, max: 20, step: 0.5, label: '雷（回/分）' },
+    tornadoStrength: { value: 0, min: 0, max: 1, step: 0.01, label: '竜巻' },
     floodLevel: { value: 0, min: 0, max: 0.6, step: 0.005, label: '浸水（水位上昇）' },
     wetness: { value: 0, min: 0, max: 1, step: 0.01, label: '地面の濡れ（手動）' },
     cloudType: {
@@ -127,6 +130,7 @@ function SceneContent({ entityCount = 2000 }) {
     cloudCoverage,
     cloudType,
     lightningRate,
+    tornadoStrength,
   }
   const inputs = deriveLayerInputs(scenarioWeather ?? manualWeather)
 
@@ -242,6 +246,16 @@ function SceneContent({ entityCount = 2000 }) {
           rate={inputs.lightningRate}
           topY={region.cloudHeight - 1.2}
           flashUniform={lightningFlash}
+        />
+      )}
+
+      {/* 竜巻: vortex 風場のデブリ + メッシュ漏斗雲。中心は緩い軌道で移動し、
+          強さはシナリオ / 天候フォルダから uniform 駆動 */}
+      {inputs.tornadoActive && heightInfo && (
+        <TornadoLayer
+          position={[0, 0.5, 0]}
+          topY={region.cloudHeight - 0.9}
+          strength={inputs.tornadoStrength}
         />
       )}
 

@@ -22,6 +22,7 @@ export const DEFAULT_WEATHER = {
   cloudCoverage: 0.65, // 雲量 0..1
   cloudType: 'stratus', // 雲タイプ（変更は再コンパイルを伴う）
   lightningRate: 0, // 落雷頻度（回/分。0 = 雷なし）
+  tornadoStrength: 0, // 竜巻の強さ 0..1（0 = なし）
 }
 
 // weather → 各レイヤーの入力値。連動ルールはここだけに書く
@@ -57,5 +58,9 @@ export function deriveLayerInputs(weather) {
 
     // 雷（ポアソン発火のレートとして LightningLayer が消費）
     lightningRate: w.lightningRate,
+
+    // 竜巻（0.01 未満はマウントしない）
+    tornadoActive: w.tornadoStrength > 0.01,
+    tornadoStrength: w.tornadoStrength,
   }
 }

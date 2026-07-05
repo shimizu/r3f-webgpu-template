@@ -28,6 +28,20 @@ export const SCENARIOS = {
     ],
   },
 
+  tornado: {
+    id: 'tornado',
+    label: '竜巻',
+    duration: 75,
+    cloudType: 'cumulus',
+    keyframes: [
+      { t: 0.0, w: { tornadoStrength: 0, rainIntensity: 0, fogDensity: 0, cloudCoverage: 0.55 } },
+      { t: 0.18, w: { tornadoStrength: 0.5, rainIntensity: 0.15, fogDensity: 0.05, cloudCoverage: 0.85 } },
+      { t: 0.5, w: { tornadoStrength: 1.0, rainIntensity: 0.35, fogDensity: 0.12, cloudCoverage: 0.95 } },
+      { t: 0.8, w: { tornadoStrength: 0.6, rainIntensity: 0.2, fogDensity: 0.08, cloudCoverage: 0.8 } },
+      { t: 1.0, w: { tornadoStrength: 0, rainIntensity: 0, fogDensity: 0, cloudCoverage: 0.6 } },
+    ],
+  },
+
   blizzard: {
     id: 'blizzard',
     label: '吹雪',

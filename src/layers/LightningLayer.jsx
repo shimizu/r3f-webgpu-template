@@ -18,6 +18,7 @@ import {
 } from 'three/tsl'
 
 import { useHeightField } from '../gis/HeightFieldContext'
+import { cpuHeightAt } from '../tsl/sampleHeightField'
 
 /*
   稲妻レイヤー（plan.md D3）。
@@ -69,24 +70,6 @@ const HIGH_GROUND_CANDIDATES = 6 // 落雷点候補数（最も高い地点を�
 // ============================================================
 // CPU 側ヘルパー
 // ============================================================
-
-// heightInfo の CPU バイリニア補間（GPU sampleHeightField と同式）
-function cpuHeightAt(heightInfo, x, z) {
-  const { heights, cols, rows, terrainWidth, terrainDepth } = heightInfo
-  const fx = Math.min(Math.max((x + terrainWidth / 2) / terrainWidth, 0), 1) * (cols - 1)
-  const fz = Math.min(Math.max((z + terrainDepth / 2) / terrainDepth, 0), 1) * (rows - 1)
-  const x0 = Math.floor(fx)
-  const z0 = Math.floor(fz)
-  const x1 = Math.min(x0 + 1, cols - 1)
-  const z1 = Math.min(z0 + 1, rows - 1)
-  const tx = fx - x0
-  const tz = fz - z0
-  const h00 = heights[z0 * cols + x0]
-  const h10 = heights[z0 * cols + x1]
-  const h01 = heights[z1 * cols + x0]
-  const h11 = heights[z1 * cols + x1]
-  return (h00 * (1 - tx) + h10 * tx) * (1 - tz) + (h01 * (1 - tx) + h11 * tx) * tz
-}
 
 // ミッドポイント変位でジグザグのポリラインを作る
 function displacePath(start, end, depth, jitter) {
