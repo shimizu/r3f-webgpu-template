@@ -1,5 +1,6 @@
 import { useEffect, useMemo } from 'react'
 import { useControls } from 'leva'
+import { uniform } from 'three/tsl'
 import { MapControls } from '@react-three/drei'
 
 import LightingRig from './LightingRig'
@@ -25,6 +26,7 @@ import MovingEntitiesLayer from './layers/MovingEntitiesLayer'
 import RainLayer from './layers/RainLayer'
 import SnowLayer from './layers/SnowLayer'
 import HeightFogLayer from './layers/HeightFogLayer'
+import LightningLayer from './layers/LightningLayer'
 import TerrainLayer from './layers/TerrainLayer'
 import CloudLayer from './layers/CloudLayer'
 import Labels3DLayer from './layers/Labels3DLayer'
@@ -76,6 +78,7 @@ function SceneContent({ entityCount = 2000 }) {
     rainIntensity,
     snow,
     fogAmount,
+    lightningRate,
     floodLevel,
     wetness,
     cloudType,
@@ -86,6 +89,7 @@ function SceneContent({ entityCount = 2000 }) {
     rainIntensity: { value: 0.6, min: 0, max: 1, step: 0.01, label: '雨量' },
     snow: { value: false, label: '雪' },
     fogAmount: { value: 0, min: 0, max: 1, step: 0.01, label: '霧' },
+    lightningRate: { value: 0, min: 0, max: 20, step: 0.5, label: '雷（回/分）' },
     floodLevel: { value: 0, min: 0, max: 0.6, step: 0.005, label: '浸水（水位上昇）' },
     wetness: { value: 0, min: 0, max: 1, step: 0.01, label: '地面の濡れ（手動）' },
     cloudType: {
@@ -122,8 +126,13 @@ function SceneContent({ entityCount = 2000 }) {
     wetness,
     cloudCoverage,
     cloudType,
+    lightningRate,
   }
   const inputs = deriveLayerInputs(scenarioWeather ?? manualWeather)
+
+  // 雷フラッシュ uniform: LightningLayer が書き、CloudLayer（雲内発光）が読む。
+  // 安定参照必須（CloudLayer のシェーダ再構築を避ける）
+  const lightningFlash = useMemo(() => uniform(0), [])
 
   const region = REGIONS[regionId]
   // 海面・雲は heightInfo（DEM ロード完了）を待たずにマウントするため、
@@ -225,6 +234,17 @@ function SceneContent({ entityCount = 2000 }) {
         />
       )}
 
+      {/* 稲妻: ポアソン過程で落雷（rate 0 なら完全 idle）。ボルト + 地形を照らす
+          フラッシュライト + 雲内発光（lightningFlash uniform 経由）を同期駆動 */}
+      {heightInfo && (
+        <LightningLayer
+          position={[0, 0.5, 0]}
+          rate={inputs.lightningRate}
+          topY={region.cloudHeight - 1.2}
+          flashUniform={lightningFlash}
+        />
+      )}
+
       {/* 海面レイヤー（投影後の地形フットプリントに合わせる）。
           浸水で水位が上がり、水位・雨量に応じて泥水に濁る */}
       {showOcean && (
@@ -262,6 +282,7 @@ function SceneContent({ entityCount = 2000 }) {
         steps={12}
         quality={cloudQuality}
         position={[0, region.cloudHeight, 0]}
+        flashNode={lightningFlash}
       />
 
       {/* HTML ラベル（地名は地域プリセット由来） */}

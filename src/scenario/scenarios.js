@@ -16,15 +16,15 @@ import { DEFAULT_WEATHER } from './weather'
 export const SCENARIOS = {
   thunderstorm: {
     id: 'thunderstorm',
-    label: '豪雨',
+    label: '雷雨（豪雨）',
     duration: 90, // 秒
     cloudType: 'cumulus',
     keyframes: [
-      { t: 0.0, w: { rainIntensity: 0, fogDensity: 0, floodLevel: 0, cloudCoverage: 0.45 } },
-      { t: 0.15, w: { rainIntensity: 0.3, fogDensity: 0.08, floodLevel: 0, cloudCoverage: 0.75 } },
-      { t: 0.45, w: { rainIntensity: 1.0, fogDensity: 0.3, floodLevel: 0.1, cloudCoverage: 0.95 } },
-      { t: 0.7, w: { rainIntensity: 0.85, fogDensity: 0.25, floodLevel: 0.16, cloudCoverage: 0.9 } },
-      { t: 1.0, w: { rainIntensity: 0, fogDensity: 0.05, floodLevel: 0.06, cloudCoverage: 0.55 } },
+      { t: 0.0, w: { rainIntensity: 0, fogDensity: 0, floodLevel: 0, cloudCoverage: 0.45, lightningRate: 0 } },
+      { t: 0.15, w: { rainIntensity: 0.3, fogDensity: 0.08, floodLevel: 0, cloudCoverage: 0.75, lightningRate: 2 } },
+      { t: 0.45, w: { rainIntensity: 1.0, fogDensity: 0.3, floodLevel: 0.1, cloudCoverage: 0.95, lightningRate: 10 } },
+      { t: 0.7, w: { rainIntensity: 0.85, fogDensity: 0.25, floodLevel: 0.16, cloudCoverage: 0.9, lightningRate: 6 } },
+      { t: 1.0, w: { rainIntensity: 0, fogDensity: 0.05, floodLevel: 0.06, cloudCoverage: 0.55, lightningRate: 0 } },
     ],
   },
 
