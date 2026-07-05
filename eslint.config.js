@@ -6,7 +6,7 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 
 export default [
   {
-    ignores: ['dist', 'reference', 'referencejs', 'src/backup_Scene.jsx'],
+    ignores: ['dist', 'reference', 'referencejs'],
   },
   {
     files: ['**/*.{js,jsx}'],
