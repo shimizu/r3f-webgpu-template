@@ -1,19 +1,22 @@
 import { useEffect, useMemo, useState } from 'react'
-import { BufferGeometry, Float32BufferAttribute, SRGBColorSpace, TextureLoader, Uint32BufferAttribute } from 'three'
+import { BufferGeometry, Float32BufferAttribute, SRGBColorSpace, TextureLoader, Uint32BufferAttribute, Vector2 } from 'three'
 import { MeshPhysicalNodeMaterial } from 'three/webgpu'
 import {
   attribute,
   color,
   float,
   mix,
+  positionWorld,
   smoothstep,
   texture,
+  uniform,
   uv,
 } from 'three/tsl'
 import { fromArrayBuffer } from 'geotiff'
 
 import { useProjectionMaybe } from '../gis/CoordinateContext'
 import { projectLonLatCPU } from '../gis/projectionCPU'
+import { coverageMask } from '../tsl/coverageMask'
 
 const DEFAULT_SIZE = 16            // 基準幅（奥行は DEM アスペクト比から自動算出）
 const DEFAULT_HEIGHT_RANGE = 4     // 標高レンジ
@@ -35,7 +38,9 @@ const DEFAULT_COLORS = {
   side: '#3a2a1a',
 }
 
-function createTerrainMaterial(colors, texMap, seaLevel = 0, stops = ELEVATION_STOPS) {
+// wet は濡れ表現の uniform セット（coverage/darken/rough/scale/edge/seed）。
+// 呼び出し側が保持して .value 更新するので、スライダー操作で再コンパイルは走らない
+function createTerrainMaterial(colors, texMap, seaLevel = 0, stops = ELEVATION_STOPS, wet = null) {
   const material = new MeshPhysicalNodeMaterial({
     roughness: TERRAIN_MATERIAL.roughness,
     metalness: TERRAIN_MATERIAL.metalness,
@@ -44,14 +49,25 @@ function createTerrainMaterial(colors, texMap, seaLevel = 0, stops = ELEVATION_S
 
   const sideMask = attribute('aSideMask', 'float')
   const sideColor = color(colors.side)
+  const elevation = attribute('aElevation', 'float')
+
+  // 濡れ表現: fBM パッチで albedo を暗く・roughness を下げる（task.md T2）。
+  // 陸地（海面標高より上）の上面のみに効かせ、海色と側面には影響させない
+  let wetMask = null
+  if (wet) {
+    const land = smoothstep(float(seaLevel).add(0.005), float(seaLevel).add(0.04), elevation)
+    wetMask = coverageMask(positionWorld.xz, wet.scale, wet.seed, wet.coverage, wet.edge)
+      .mul(land)
+      .mul(sideMask.oneMinus())
+    material.roughnessNode = mix(float(TERRAIN_MATERIAL.roughness), wet.rough, wetMask)
+  }
+  const applyWet = (c) => (wetMask ? c.mul(mix(float(1), wet.darken, wetMask)) : c)
 
   if (texMap) {
     const texNode = texture(texMap)
     const texColor = texNode.sample(uv())
-    material.colorNode = mix(texColor, sideColor, sideMask)
+    material.colorNode = mix(applyWet(texColor), sideColor, sideMask)
   } else {
-    const elevation = attribute('aElevation', 'float')
-
     const s = float(seaLevel)
     const c1 = mix(color(colors.deepOcean), color(colors.shallowOcean),
       smoothstep(float(stops[0]).add(s), float(stops[1]).add(s), elevation))
@@ -66,7 +82,7 @@ function createTerrainMaterial(colors, texMap, seaLevel = 0, stops = ELEVATION_S
     const finalColor = mix(c5, color(colors.peak),
       smoothstep(float(stops[5]).add(s), float(stops[6]).add(s), elevation))
 
-    material.colorNode = mix(finalColor, sideColor, sideMask)
+    material.colorNode = mix(applyWet(finalColor), sideColor, sideMask)
   }
 
   return material
@@ -412,6 +428,10 @@ function buildTerrainGeometry(demData, { terrainWidth, targetHeight, smooth, hei
       rows,
       terrainWidth: maxX - minX,
       terrainDepth: maxZ - minZ,
+      // 正規化標高 0..1 ↔ ローカル Y の変換係数（localY = minY + norm * rangeY）。
+      // seaLevel（正規化値）を高さバッファと突き合わせる消費者（草の海面マスク等）が使う
+      minY: minElev * elevToWorld,
+      rangeY: elevRange * elevToWorld,
     },
   }
 }
@@ -429,9 +449,34 @@ function TerrainLayer({
   seaLevel = 0,
   position = [0, 0, 0],
   onHeightData,
+  wetness = 0, // 濡れカバレッジ 0..1（0 = 乾燥、1 = 全面濡れ）
+  wetDarken = 0.55, // 濡れ部の albedo 減衰率
+  wetRoughness = 0.35, // 濡れ部の roughness（艶）
+  wetScale = 0.35, // 濡れパッチの空間周波数
 }) {
   const [demData, setDemData] = useState(null)
   const [texMap, setTexMap] = useState(null)
+
+  // 濡れ uniform セット。生成は一度きりで、値の変更は .value 更新のみ
+  // （マテリアル再コンパイルを走らせない）
+  const wetUniforms = useMemo(
+    () => ({
+      coverage: uniform(0),
+      darken: uniform(0.55),
+      rough: uniform(0.35),
+      scale: uniform(0.35),
+      edge: uniform(0.12),
+      seed: uniform(new Vector2(5, 5)),
+    }),
+    []
+  )
+
+  useEffect(() => {
+    wetUniforms.coverage.value = wetness
+    wetUniforms.darken.value = wetDarken
+    wetUniforms.rough.value = wetRoughness
+    wetUniforms.scale.value = wetScale
+  }, [wetUniforms, wetness, wetDarken, wetRoughness, wetScale])
 
   // <Coordinate> 配下なら投影モード（bbox + view から位置・スケールを自動決定）
   const proj = useProjectionMaybe()
@@ -544,7 +589,7 @@ function TerrainLayer({
     if (heightInfo && onHeightData) onHeightData(heightInfo)
   }, [heightInfo, onHeightData])
 
-  const material = useMemo(() => createTerrainMaterial(mergedColors, texMap, seaLevel, elevationStops), [mergedColors, texMap, seaLevel, elevationStops])
+  const material = useMemo(() => createTerrainMaterial(mergedColors, texMap, seaLevel, elevationStops, wetUniforms), [mergedColors, texMap, seaLevel, elevationStops, wetUniforms])
 
   useEffect(() => {
     return () => {

@@ -13,7 +13,7 @@ dist-ssr
 *.local
 
 # ローカル参照用のベンダリングコード（リポジトリには含めない）
-reference
+referencejs
 
 # Editor directories and files
 .vscode/*
