@@ -4,15 +4,19 @@
 
 ## 現状の品質構成
 
+> このプロジェクトは災害ジオラマ可視化基盤へ発展し、Scene.jsx の構成が大きく変わった。
+> 以下は現状に更新した表。多くの項目が「未マウント → 有効/実装済み」に進んでいる。
+
 | 機能 | 状態 | 備考 |
 |------|------|------|
 | WebGPU レンダラー | 有効 | antialias: true |
 | シャドウマップ | 有効 | directional 2048x2048 |
-| TSL シェーダー | 活用中 | アクティブな Scene.jsx は SkyLayer（Preetham 空）・GeojsonLayer・MovingEntitiesLayer 中心。Terrain/Rain/Water 系レイヤーは import 済みだが未マウント |
-| IBL 環境マップ | 未使用 | StudioEnvironment.jsx は存在するが未接続 |
-| ポストプロセッシング | **実装済み・未マウント** | `src/effects/` に実装あり。後述の通り SceneEffects は Scene.jsx に未マウント |
+| TSL シェーダー | 活用中 | Terrain（DEM）・Cloud（体積雲）・Water・Grass・各災害レイヤーが常時マウント。地域プリセット（regions.js）で切替 |
+| IBL 環境マップ | StudioEnvironment 実装済み | 有効化は Scene 構成による |
+| ポストプロセッシング | **実装済み・leva トグルでマウント** | `src/effects/` に Bloom + Tilt-Shift + Film Grade。`postfx` トグルで `<SceneEffects />` をマウント（既定オフ、GPU 予算次第） |
 | トーンマッピング | デフォルト | 明示設定なし |
-| フォグ | 基本 | 線形フォグのみ |
+| フォグ | 高さフォグ実装済み | `HeightFogLayer`（`scene.fogNode`、距離+高さ指数フォグ）を uniform 駆動 |
+| 濡れ / 堆積 / 延焼 | 実装済み | TerrainLayer に wet（濡れ）/ acc（雪・苔）/ burn（延焼）の表面表現（後述 §6 の Wetness は実装済み） |
 
 ---
 
@@ -28,19 +32,23 @@ WebGL 用の postprocessing ライブラリとは別系統。
 | ファイル | 内容 | 状態 |
 |---------|------|------|
 | `src/effects/createBloom.js` | `bloom` ノードのラッパー（`createBloomPass`） | **有効** |
+| `src/effects/createTiltShift.js` | ミニチュア風ぼかし（GaussianBlur） | **有効** |
+| `src/effects/createFilmGrade.js` | 色収差 + コントラスト + 彩度 + ビネット + グレイン | **有効** |
 | `src/effects/createDof.js` | `dof` ノードのラッパー（`createDofPass`） | コメントアウトで無効化 |
 | `src/effects/createGodrays.js` | `godrays` ノードのラッパー（`createGodraysPass`） | コメントアウトで無効化 |
-| `src/effects/SceneEffects.jsx` | `RenderPipeline` + `pass(scene, camera)` で合成 | 後述（未マウント） |
+| `src/effects/SceneEffects.jsx` | `RenderPipeline` + `pass(scene, camera)` で合成 | leva `postfx` トグルでマウント |
 
 `SceneEffects.jsx` は `RenderPipeline(renderer)` と `pass(scene, camera)` でシーンパスを作り、
 各エフェクトをノードグラフでチェーン合成して `rp.outputNode` に渡す。
-現状は **Bloom のみ有効**で、`scenePassColor.add(createBloomPass(scenePassColor))` としてシーンカラーに加算合成している。
+現状のチェーンは **Bloom（加算）→ Tilt-Shift → Film Grade** の順で、最終段の Film Grade が
+色収差・コントラスト・彩度・ビネット・アニメーショングレインをまとめて適用する。
 **Godrays と DoF は import 行を含めてコメントアウトされており無効**。
 
-> ⚠️ **重要: 現状は未マウント**
-> `SceneEffects` は `Scene.jsx` で import されてはいるが（`eslint-disable no-unused-vars` 付き）、
-> JSX ツリーにマウントされていないため、実行時にはポストプロセスは描画されない。
-> 実装は存在するが、有効化するには `Scene.jsx` で `<SceneEffects />` をマウントする必要がある。
+> **マウント状況（更新）**
+> `SceneEffects` は Scene.jsx の leva `postfx` トグルでマウントされる（既定オフ）。
+> GPU 負荷が高く、steps≈12 の体積雲や災害パーティクルと併用すると TDR リスクが
+> あるため、必要なときだけ有効化する運用。マウントすると R3F の自動描画から
+> 手動パイプライン描画（`useFrame` で `rp.render`）に切り替わる。
 
 各エフェクトの import パスは以下の通り（実装準拠）:
 
@@ -209,14 +217,17 @@ renderer.shadowMap.type = THREE.VSMShadowMap
 
 WebGPU + TSL ならではの手法。
 
-### Procedural Wetness（濡れ表現）
-地形マテリアルの roughness を雨量に応じて下げ、metalness を微増させる。
+### Procedural Wetness（濡れ表現）— 実装済み
+`TerrainLayer` に実装済み。fBM パッチマスク（`coverageMask`）で陸地の上面だけを
+暗く・低 roughness にし、雨量・浸水と連動する。濡れ量は目標値に対して非対称の
+時定数で追従する（降り始めは速く濡れ、止んだ後はゆっくり乾く）。下は概念コード。
 ```js
-// TerrainLayer の material で
+// TerrainLayer の material で（実際は wet uniform セット + coverageMask）
 const wetness = uniform(0.8) // 0=乾燥, 1=びしょ濡れ
 material.roughnessNode = float(0.85).sub(wetness.mul(0.5))  // 0.85 → 0.35
-material.metalnessNode = wetness.mul(0.15)                    // 0 → 0.15
 ```
+同じパターンで **acc（雪・苔の堆積）** と **burn（山火事の延焼・焼け跡）** も
+TerrainLayer に載っている（法線の向き・標高・延焼マスクで albedo/roughness/emissive を変える）。
 
 ### Puddle Mapping（水たまり）
 地形の低い位置に水たまりを表現。elevation 属性で判定し、低い部分だけ反射を強化。
@@ -225,9 +236,11 @@ const isPuddle = smoothstep(float(0.3), float(0.35), elevation).oneMinus()
 material.roughnessNode = mix(dryRoughness, float(0.05), isPuddle)
 ```
 
-### 大気散乱フォグ
-現在の線形フォグを TSL で高度依存のエクスポネンシャルフォグに置き換え。
-低地ほど濃い霧で雨天の空気感を強化。
+### 高度依存フォグ — 実装済み
+`HeightFogLayer`（`src/tsl/heightFog.js`）で実装済み。距離 + 高さの指数フォグを
+`scene.fogNode` に設定し、低地ほど濃く上空ほど薄い。density は uniform 駆動で
+0 なら完全無効。空・雲は `fog: false` で除外している。マウントは常時（条件マウントは
+全マテリアル再コンパイルを招くため）。
 
 ---
 
@@ -292,23 +305,30 @@ three.js r183 の `examples/jsm/tsl/display/` に存在する全ノード:
 
 ## 8. 推奨実装優先順位（雨天ジオラマ向け）
 
-### Phase 1: 即効性が高いもの
-1. **トーンマッピング設定**（ACESFilmic）— 1行で改善
-2. **IBL 環境マップ有効化**（StudioEnvironment）— PBR 反射が劇的改善
-3. **Bloom**（BloomNode）— 雨粒とスプラッシュの発光（`src/effects/createBloom.js` 実装済み・有効。あとは `SceneEffects` のマウントのみ）
+> 実装状況を更新。Bloom / Tilt-Shift / Film Grade（グレイン + 色収差 + ビネット）・
+> Wetness・高さフォグは実装済み。残りは未着手または意図的に不採用。
 
-### Phase 2: ジオラマ感の強化
-4. **Depth of Field**（DepthOfFieldNode）— ティルトシフト風ボケ（`src/effects/createDof.js` 実装済み・コメントアウト中。有効化するだけ）
-5. **GTAO**（GTAONode）— 地形の谷間に自然な影
-6. **Wetness 表現**（TSL roughness 制御）— 濡れた地面
+### 実装済み
+- **Bloom**（BloomNode）— `createBloom.js`。SceneEffects チェーンで有効
+- **Tilt-Shift**（GaussianBlur）— `createTiltShift.js`。ミニチュア風ぼかし
+- **Film Grade**（`createFilmGrade.js`）— **Film Grain・Chromatic Aberration・
+  Vignette・コントラスト・彩度をまとめて実装**。チェーン最終段
+- **Wetness 表現**（TSL roughness 制御）— TerrainLayer に実装（濡れ / 堆積 / 延焼）
+- **高さフォグ** — HeightFogLayer（`scene.fogNode`）
 
-### Phase 3: 映像品質の仕上げ
-7. **Film Grain**（FilmNode）— カメラ撮影感
-8. **Chromatic Aberration** — レンズ感
-9. **God Rays**（GodraysNode）— 雲間の光線（晴れ間演出時）（`src/effects/createGodrays.js` 実装済み・コメントアウト中）
-10. **SSR**（SSRNode）— 水面・濡れ面の反射
+### 未着手（有効化候補）
+- **トーンマッピング設定**（ACESFilmic）— 1行で改善
+- **IBL 環境マップ有効化**（StudioEnvironment）— PBR 反射が劇的改善
+- **Depth of Field**（DepthOfFieldNode）— `createDof.js` 実装済み・コメントアウト中
+- **God Rays**（GodraysNode）— `createGodrays.js` 実装済み・コメントアウト中。山火事の光芒に有力
+- **SSR**（SSRNode）— 水面・濡れ面の反射
+
+### 意図的に不採用
+- **GTAO / SSAO 系** — このプロジェクトでは採用しない方針（提案対象外）
 
 ### 注意事項
 - WebGPU ネイティブの PostProcessing パイプラインは `three/examples/jsm/postprocessing/` ではなく `three/examples/jsm/tsl/display/` のノードを使用する
 - R3F + WebGPU での PostProcessing 統合は three.js 側の API が安定途上のため、`@react-three/postprocessing` ではなく TSL ノードを直接使う方が確実
-- パフォーマンス: Bloom + GTAO + DoF の3つを同時に有効にしても WebGPU なら 60fps を維持できる見込み（パーティクル 30k 程度であれば）
+- パフォーマンス予算: 体積雲は steps≈12・SceneEffects は既定オフが TDR 回避の目安。
+  災害パーティクル（雨/雪/火の粉/デブリ）と重い raymarch を同時に焚かないよう、
+  シナリオ側（`deriveLayerInputs`）で山火事中は通常雲の coverage を絞る等の制御を持つ
