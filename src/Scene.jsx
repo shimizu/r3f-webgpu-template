@@ -51,20 +51,22 @@ function Scene(props) {
 // eslint-disable-next-line no-unused-vars
 function SceneContent({ entityCount = 2000 }) {
   const { heightInfo, setHeightInfo } = useHeightField()
-  const { regionId, showOcean, showGrass, grassPlacement, postfx } = useControls({
+  const { regionId, showOcean, postfx } = useControls({
     regionId: { value: 'hormuz', options: REGION_OPTIONS, label: '地域' },
     showOcean: { value: true, label: '海面を表示' },
-    // 草の表示トグル。GrassLayer 内の「草」フォルダに置くとオフ時に
-    // フォルダごと消えて戻せなくなるため、マウント制御は Scene 側に置く
-    showGrass: { value: true, label: '草を表示' },
-    grassPlacement: {
-      value: 'terrain',
-      options: { '地形(DEM)': 'terrain', 'ステージ床': 'floor' },
-      label: '草の配置',
-    },
     // ポストFX（Bloom + Tilt-Shift + Film Grade）。GPU 負荷が高く TDR の
     // リスクがあるため既定オフ（steps≈12 の雲と併用時は特に注意）
     postfx: { value: false, label: 'ポストFX' },
+  })
+  // 「草」フォルダは GrassLayer 内の詳細パラメータと leva がマージする。
+  // 表示トグルを Scene 側に置くことで、非表示中もフォルダが残り再表示できる
+  const { showGrass, grassPlacement } = useControls('草', {
+    showGrass: { value: false, label: '表示' },
+    grassPlacement: {
+      value: 'terrain',
+      options: { '地形(DEM)': 'terrain', 'ステージ床': 'floor' },
+      label: '配置',
+    },
   })
   const { rain, snow, wetness, cloudType, cloudCoverage, cloudQuality } = useControls('天候', {
     rain: { value: false, label: '雨' },
