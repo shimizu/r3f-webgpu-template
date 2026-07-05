@@ -22,6 +22,7 @@
 ### 地形・地面・水
 - [TerrainLayer](./TerrainLayer.md) — GeoTIFF DEM 地形（濡れ/堆積/延焼の表面表現つき）
 - [GrassLayer](./GrassLayer.md) — GPU インスタンス草（1 ドローコール）
+- [TreeLayer](./TreeLayer.md) — GPU インスタンス樹木（針葉樹 + 広葉樹の混在、1 ドローコール）
 - [WaterOceanLayer](./WaterOceanLayer.md) — 海面（浸水・濁り対応）
 - [WaterBoxLayer](./WaterBoxLayer.md) — 箱型の水面シミュレーション
 - [WaterBlobLayer](./WaterBlobLayer.md) — ブロブ状の水面
