@@ -70,3 +70,22 @@ export function createHeightFieldSampler({
 
   return { heightAt, normalAt, elevationAt }
 }
+
+// CPU 側のバイリニア補間（GPU heightAt と同式）。
+// 落雷点・竜巻中心など CPU で決める座標の接地に使う
+export function cpuHeightAt(heightInfo, x, z) {
+  const { heights, cols, rows, terrainWidth, terrainDepth } = heightInfo
+  const fx = Math.min(Math.max((x + terrainWidth / 2) / terrainWidth, 0), 1) * (cols - 1)
+  const fz = Math.min(Math.max((z + terrainDepth / 2) / terrainDepth, 0), 1) * (rows - 1)
+  const x0 = Math.floor(fx)
+  const z0 = Math.floor(fz)
+  const x1 = Math.min(x0 + 1, cols - 1)
+  const z1 = Math.min(z0 + 1, rows - 1)
+  const tx = fx - x0
+  const tz = fz - z0
+  const h00 = heights[z0 * cols + x0]
+  const h10 = heights[z0 * cols + x1]
+  const h01 = heights[z1 * cols + x0]
+  const h11 = heights[z1 * cols + x1]
+  return (h00 * (1 - tx) + h10 * tx) * (1 - tz) + (h01 * (1 - tx) + h11 * tx) * tz
+}

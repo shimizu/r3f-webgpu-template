@@ -1,4 +1,4 @@
-import { Fn, cos, float, sin, vec3 } from 'three/tsl'
+import { Fn, cos, exp, float, length, sin, vec2, vec3 } from 'three/tsl'
 
 /*
   3D ノイズ風場の共有部品（plan.md R4）。
@@ -10,8 +10,11 @@ import { Fn, cos, float, sin, vec3 } from 'three/tsl'
   パラメータは uniform ノードでも JS 数値でも渡せる（uniform なら再コンパイル
   なしで実行時調整できる）。octave 構成や空間スケールは生成時に焼き込む。
 
-  竜巻（plan.md D4）はここに vortex 項（中心 vec2 / 半径 / 接線速度 / 吸引 /
-  上昇気流の uniform）を追加し、FBM と合成する拡張を予定している。
+  vortex オプション（plan.md D4 竜巻）を渡すと渦項が合成される:
+  - 接線成分は Rankine 渦近似（半径 radius でピーク、外側は減衰）
+  - 吸引（inflow）は中心向き、上昇気流（updraft）はコア内で最大
+  - center は vec2 uniform（x=world X, y=world Z）。移動する竜巻は
+    CPU 側で center.value を毎フレーム動かす
 
   @param {object} o
   @param {Node|number} o.turbScale     ノイズの空間周波数（小さい = 大きなうねり）
@@ -22,6 +25,7 @@ import { Fn, cos, float, sin, vec3 } from 'three/tsl'
   @param {number}      o.yDamping      Y 方向の風の減衰
   @param {{x,z}}       o.gustSpatialScale 突風の空間変動スケール
   @param {Array}       o.octaves       [{ freq, amp }] × 3 想定
+  @param {object}      [o.vortex]      { center(vec2 uniform), radius, tangential, inflow, updraft }
   @returns {{ windAt: Fn }} windAt([pos(vec3), time(float)]) → 風力 vec3
                             （フレームスケールは呼び出し側で乗じる）
 */
@@ -41,6 +45,7 @@ export function createWindField({
   yDamping = 0.1,
   gustSpatialScale = { x: 0.03, z: 0.04 },
   octaves = DEFAULT_WIND_OCTAVES,
+  vortex = null,
 }) {
   const windAt = Fn(([pos, t]) => {
     const noiseX = pos.x.mul(turbScale).toVar()
@@ -80,11 +85,29 @@ export function createWindField({
     const gustFactor = sin(gustPhase).mul(0.5).add(0.5).toVar()
     const gustBoost = gustFactor.mul(gustStrength).toVar()
 
-    return vec3(
+    const base = vec3(
       windFX.mul(turbStrength).add(gustBoost.mul(sin(gustPhase.mul(1.3)))),
       windFY.mul(turbStrength),
       windFZ.mul(turbStrength).add(gustBoost.mul(cos(gustPhase.mul(0.9))))
     )
+
+    if (!vortex) return base
+
+    // --- vortex 項（Rankine 渦近似） ---
+    const rel = vec2(pos.x.sub(vortex.center.x), pos.z.sub(vortex.center.y)).toVar()
+    const dist = length(rel).max(1e-4).toVar()
+    const s = dist.div(vortex.radius).toVar()
+    // s=1（半径上）でピーク 1、内側は線形、外側は 1/s で減衰する滑らか近似
+    const profile = s.mul(2).div(s.mul(s).add(1)).toVar()
+    const tangDir = vec2(rel.y.negate(), rel.x).div(dist).toVar() // 反時計回り
+    const inflowDir = rel.div(dist).negate().toVar()
+    const core = exp(s.mul(s).negate()) // コア内で最大の上昇気流
+
+    return base.add(vec3(
+      tangDir.x.mul(vortex.tangential).add(inflowDir.x.mul(vortex.inflow)).mul(profile),
+      core.mul(vortex.updraft),
+      tangDir.y.mul(vortex.tangential).add(inflowDir.y.mul(vortex.inflow)).mul(profile)
+    ))
   })
 
   return { windAt }
