@@ -72,7 +72,7 @@ export default function GrassLayer({
   maxCount = 100000, // 生成ブレード数（density で間引く）
   position = [0, 0, 0],
   heightInfo = null, // TerrainLayer の onHeightData が渡す DEM 高さバッファ（安定参照必須）
-  seaLevel = 0, // 正規化標高（TerrainLayer と同じ値）。これ以下に草は生えない
+  seaLevel = 0, // 正規化標高（TerrainLayer と同じ値）。leva「生育下限標高」の初期値にのみ使う
   bladeScale = 1, // 草丈・葉幅の一括倍率（leva 値に乗算。DEM 上ではスケールを合わせるのに使う）
 }) {
   const {
@@ -94,6 +94,9 @@ export default function GrassLayer({
     translucency,
     moundDepth,
     moundScale,
+    elevMin,
+    elevMax,
+    elevFade,
   } = useControls('草', {
     density: { value: 0.15, min: 0, max: 1, step: 0.01, label: '密度' },
     coverage: { value: 0.62, min: 0, max: 1, step: 0.01, label: '被覆率' },
@@ -113,6 +116,11 @@ export default function GrassLayer({
     translucency: { value: 0.6, min: 0, max: 2, step: 0.01, label: '透過光' },
     moundDepth: { value: 0.55, min: 0, max: 2, step: 0.01, label: '起伏の高さ' },
     moundScale: { value: 0.12, min: 0.02, max: 0.8, step: 0.001, label: '起伏スケール' },
+    // --- 標高による生育域（DEM モードのみ有効。正規化標高 0..1） ---
+    // 初期の下限は seaLevel + 汀線マージン（従来のハードコード値と同じ挙動）
+    elevMin: { value: seaLevel + 0.01, min: 0, max: 1, step: 0.005, label: '生育下限標高' },
+    elevMax: { value: 1, min: 0, max: 1, step: 0.005, label: '生育上限標高' },
+    elevFade: { value: 0.04, min: 0.005, max: 0.2, step: 0.005, label: '標高フェード幅' },
   })
 
   const renderer = useThree((state) => state.gl)
@@ -186,6 +194,9 @@ export default function GrassLayer({
       moundDepth: uniform(0.55),
       moundScale: uniform(0.12),
       groundSeed: uniform(new THREE.Vector2(8.3, 2.1)),
+      elevMin: uniform(0.2),
+      elevMax: uniform(1),
+      elevFade: uniform(0.04),
     }
     const u = uniforms
 
@@ -239,9 +250,13 @@ export default function GrassLayer({
     // マスク外のブレードは高さ・幅ゼロ（面積なし）に潰れて消える
     let mask = coverageMask(iPos, u.maskScale, u.maskSeed, u.coverage, u.maskEdge)
     if (heightInfo) {
-      // 海面下に草は生えない: 正規化標高が seaLevel を下回る場所で汀線フェード
+      // 標高による生育域（uniform 駆動 = leva「生育下限/上限標高」で即時変更）。
+      // 下限: elevMin から fade 幅で立ち上がる（汀線）。
+      // 上限: elevMax の上側に fade 幅を取るので、既定 elevMax=1 では山頂まで生える
       const normElev = groundY.sub(heightInfo.minY).div(heightInfo.rangeY)
-      mask = mask.mul(smoothstep(seaLevel + 0.01, seaLevel + 0.05, normElev))
+      const lower = smoothstep(u.elevMin, u.elevMin.add(u.elevFade), normElev)
+      const upper = smoothstep(u.elevMax, u.elevMax.add(u.elevFade), normElev).oneMinus()
+      mask = mask.mul(lower).mul(upper)
     }
     const h = u.height.mul(iVar.y).mul(mask)
     const w = u.width
@@ -311,7 +326,7 @@ export default function GrassLayer({
     geometry.instanceCount = Math.floor(maxCount * 0.15)
 
     return { geometry, material, uniforms, heightsAttr }
-  }, [area, maxCount, heightInfo, seaLevel])
+  }, [area, maxCount, heightInfo])
 
   // 密度 = instanceCount の変更のみ（ジオメトリ再生成なし）
   useEffect(() => {
@@ -339,6 +354,9 @@ export default function GrassLayer({
     u.translucency.value = translucency
     u.moundDepth.value = moundDepth
     u.moundScale.value = moundScale
+    u.elevMin.value = elevMin
+    u.elevMax.value = elevMax
+    u.elevFade.value = elevFade
   }, [
     uniforms,
     coverage,
@@ -359,6 +377,9 @@ export default function GrassLayer({
     translucency,
     moundDepth,
     moundScale,
+    elevMin,
+    elevMax,
+    elevFade,
   ])
 
   useEffect(() => {
