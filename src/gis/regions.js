@@ -65,6 +65,40 @@ export const REGIONS = {
     labels: [{ id: 'taiwan', text: '台湾', position: [0, 2.5, 0] }],
     entityRegion: null,
   },
+
+  fuji: {
+    id: 'fuji',
+    label: '富士山周辺',
+    demUrl: './dem/japan.tif',
+    // japan.tif（EPSG:3857 → 4326 に再投影済み）の実 bbox。富士山・箱根・
+    // 駿河湾東部をカバーする狭域 DEM（約 0.67° × 0.39°、90m グリッド）
+    bbox: { lonMin: 138.528032, lonMax: 139.198915, latMin: 35.061038, latMax: 35.447558 },
+    view: {
+      centerLon: 138.863473,
+      centerLat: 35.254298,
+      worldScale: 2000, // → フットプリント 約 8.61 × 6.07 units
+      altitudeScale: 0,
+      sampleLonStep: 0.02,
+      sampleLatStep: 0.02,
+      projectionType: 'equirectangular',
+    },
+    // 生 DEM の 0m 正規化値は 0.0035（陸が大半で海面が狭い）。hormuz/taiwan の
+    // ような広い海面はないため低めの出発点。lookdev で要微調整
+    seaLevel: 0.0035,
+    // 富士山（3742m）が突出した外れ値で、min/max 正規化だと周辺の平地（〜1500m）が
+    // すべて海色帯（既定 stops の 0.0〜0.4）に潰れてしまう。この DEM 用に陸の色帯を
+    // 低い正規化値側へ寄せ、標高帯を実標高に近い配分にする（seaLevel オフセット込み）。
+    //   shore〜56m / lowland〜300m / highland〜980m / mountain〜2180m / peak〜3742m
+    terrain: {
+      smooth: 1.25,
+      heightScale: 1,
+      baseHeight: 1,
+      elevationStops: [0.0, 0.006, 0.015, 0.08, 0.26, 0.58, 1.0],
+    },
+    cloudHeight: 5,
+    labels: [{ id: 'fuji', text: '富士山', position: [-1.75, 3, -1.67] }],
+    entityRegion: null,
+  },
 }
 
 // leva の select 用 { ラベル: id } マップ

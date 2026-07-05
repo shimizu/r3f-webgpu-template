@@ -249,6 +249,7 @@ function SceneContent({ entityCount = 2000 }) {
           smooth={region.terrain.smooth}
           heightScale={region.terrain.heightScale}
           baseHeight={region.terrain.baseHeight}
+          elevationStops={region.terrain.elevationStops}
           seaLevel={region.seaLevel}
           onHeightData={setHeightInfo}
           wetness={inputs.wetnessTarget}
