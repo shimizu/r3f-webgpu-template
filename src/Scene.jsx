@@ -23,6 +23,7 @@ import MovingEntitiesLayer from './layers/MovingEntitiesLayer'
 import TerrainLayer from './layers/TerrainLayer'
 import CloudLayer from './layers/CloudLayer'
 import Labels3DLayer from './layers/Labels3DLayer'
+import GrassLayer from './layers/GrassLayer'
 
 // 移動体モックの生成域（hormuz.tif の bbox 45.85〜65.19 / 21.90〜32.12 の内側）。
 // MovingEntitiesLayer の useMemo 依存になるため、inline ではなく定数で渡す
@@ -72,6 +73,9 @@ function Scene({ entityCount = 2000 }) {
 
       {/* 青いグリッドレイヤー */}
       <GridLayer position={[0, -1, 0]} />
+
+      {/* GPU インスタンス草（ステージ床の上、手続き起伏付き。1 ドローコール） */}
+      <GrassLayer area={40} position={[0, -1, 0]} />
 
       {/* GIS: DEM 地形 + GeoJSON を同一投影コンテキストで自動整合 */}
       <Coordinate projection="equirectangular" view={HORMUZ_VIEW} position={[0, 0.5, 0]}>
