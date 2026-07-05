@@ -77,6 +77,8 @@ CPU(受信・パック) → GPU(投影・補間) → Draw(インスタンス描�
 - `SnowLayer` — GPU パーティクルの降雪（RainLayer 派生。低速落下 + 強い横流され + 着地静止フェード。雪トグルで TerrainLayer の堆積も時定数駆動）
 - `LightningLayer` — 稲妻。ボルトは CPU 生成（ミッドポイント変位 + 確率分岐）の billboard リボン + 加算ブレンド。ポアソン過程（rate 回/分）+ 3 段エンベロープ。フラッシュはポイントライトと flashUniform（CloudLayer の雲内発光と共有）の 2 系統
 - `TornadoLayer` — 竜巻。windField の vortex 項（Rankine 渦近似）で螺旋上昇するデブリ（runVortexCompute）+ LatheGeometry の漏斗雲メッシュ（vertex ノイズ揺らぎ + スクロールノイズ opacity。raymarch 不使用で雲と steps 予算を食い合わない）。中心はリサージュ軌道で移動
+- `FireLayer` — 山火事の炎 + 火の粉。burnField（`src/tsl/burnField.js`、発火点距離場の解析近似）と同じ ignition/radius uniform で燃焼前線リングからスポーン（runEmberCompute のパラメータ差で 2 役）。TerrainLayer は同じマスクで焼け跡 albedo + 前線残火 emissive
+- `SmokeLayer` — 山火事の煙。CloudLayer の 'smoke' プリセット + 延焼マスクの XZ ゲート（gateAt prop）の薄いラッパー。山火事中は deriveLayerInputs が通常雲の coverage を絞って raymarch 予算を折半
 - `GeojsonLayer` — GeoJSON ベクター地図描画
 - `MovingEntitiesLayer` — GPU 移動体（船舶・航空機）の補間描画
 - `Labels3DLayer` — drei `<Html>` による 3D 空間内の HTML ラベル（地名等）

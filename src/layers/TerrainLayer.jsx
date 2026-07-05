@@ -12,6 +12,7 @@ import {
   positionWorld,
   smoothstep,
   texture,
+  time,
   transformNormalToView,
   uniform,
   uv,
@@ -22,6 +23,8 @@ import { fromArrayBuffer } from 'geotiff'
 import { useProjectionMaybe } from '../gis/CoordinateContext'
 import { projectLonLatCPU } from '../gis/projectionCPU'
 import { coverageMask } from '../tsl/coverageMask'
+import { createBurnField } from '../tsl/burnField'
+import { valueFbm3 } from '../tsl/valueNoise'
 
 const DEFAULT_SIZE = 16            // 基準幅（奥行は DEM アスペクト比から自動算出）
 const DEFAULT_HEIGHT_RANGE = 4     // 標高レンジ
@@ -46,8 +49,10 @@ const DEFAULT_COLORS = {
 // wet は濡れ表現の uniform セット（coverage/darken/rough/scale/edge/seed）。
 // acc は堆積（雪/苔）の uniform セット（amount/snowLine/band/aspect/flatThreshold/
 // patchScale/edge/seed/color/roughness/flatten）。
-// どちらも呼び出し側が保持して .value 更新するので、スライダー操作で再コンパイルは走らない
-function createTerrainMaterial(colors, texMap, seaLevel = 0, stops = ELEVATION_STOPS, wet = null, acc = null) {
+// burn は延焼の uniform セット（ignition/radius/band/noiseScale/noiseAmount/seed/
+// scorchColor/glowColor/glowStrength。burnField.js の解析近似）。
+// いずれも呼び出し側が保持して .value 更新するので、スライダー操作で再コンパイルは走らない
+function createTerrainMaterial(colors, texMap, seaLevel = 0, stops = ELEVATION_STOPS, wet = null, acc = null, burn = null) {
   const material = new MeshPhysicalNodeMaterial({
     roughness: TERRAIN_MATERIAL.roughness,
     metalness: TERRAIN_MATERIAL.metalness,
@@ -92,12 +97,34 @@ function createTerrainMaterial(colors, texMap, seaLevel = 0, stops = ELEVATION_S
   }
   const applyAcc = (c) => (accMask ? mix(c, acc.color, accMask) : c)
 
+  // 延焼（山火事）: 発火点距離場の解析近似（burnField.js）。
+  // 焼け跡は albedo を焦がし roughness を上げ、前線帯はちらつく残火 emissive
+  let burntMask = null
+  if (burn) {
+    const { burnAt } = createBurnField(burn)
+    const burnState = burnAt(positionWorld.xz)
+    const land = smoothstep(float(seaLevel).add(0.005), float(seaLevel).add(0.04), elevation)
+    const topLand = land.mul(sideMask.oneMinus())
+    burntMask = burnState.x.mul(topLand)
+    const burningMask = burnState.y.mul(topLand)
+    roughNode = mix(roughNode, float(0.95), burntMask)
+    // 残火のちらつき（空間 + 時間の安いノイズ）
+    const flicker = valueFbm3(vec3(positionWorld.xz.mul(2.5), time.mul(1.4)), 2)
+      .mul(0.5)
+      .add(0.55)
+    material.emissiveNode = burn.glowColor
+      .mul(burningMask)
+      .mul(burn.glowStrength)
+      .mul(flicker)
+  }
+  const applyBurn = (c) => (burntMask ? mix(c, burn.scorchColor, burntMask.mul(0.92)) : c)
+
   material.roughnessNode = roughNode
 
   if (texMap) {
     const texNode = texture(texMap)
     const texColor = texNode.sample(uv())
-    material.colorNode = mix(applyAcc(applyWet(texColor)), sideColor, sideMask)
+    material.colorNode = mix(applyBurn(applyAcc(applyWet(texColor))), sideColor, sideMask)
   } else {
     const s = float(seaLevel)
     const c1 = mix(color(colors.deepOcean), color(colors.shallowOcean),
@@ -113,7 +140,7 @@ function createTerrainMaterial(colors, texMap, seaLevel = 0, stops = ELEVATION_S
     const finalColor = mix(c5, color(colors.peak),
       smoothstep(float(stops[5]).add(s), float(stops[6]).add(s), elevation))
 
-    material.colorNode = mix(applyAcc(applyWet(finalColor)), sideColor, sideMask)
+    material.colorNode = mix(applyBurn(applyAcc(applyWet(finalColor))), sideColor, sideMask)
   }
 
   return material
@@ -500,6 +527,9 @@ function TerrainLayer({
   snowRiseTime = 40, // 積雪の立ち上がり時定数（秒。降雪中にゆっくり積もる）
   snowFallTime = 240, // 融雪の時定数（秒。降り止んだ後は非常にゆっくり消える）
   snowDriveMax = 0.9, // 降雪駆動が到達する堆積量の上限
+  // --- 延焼（山火事 5a）: radius 0 で OFF ---
+  fireIgnition = null, // 発火点 [x, z]（レイヤーローカル XZ）
+  fireRadius = 0, // 延焼半径（world units。CPU 側で進める）
 }) {
   const [demData, setDemData] = useState(null)
   const [texMap, setTexMap] = useState(null)
@@ -535,6 +565,28 @@ function TerrainLayer({
     }),
     []
   )
+
+  // 延焼 uniform セット（生成一度きり、値は .value 更新のみ）
+  const burnUniforms = useMemo(
+    () => ({
+      ignition: uniform(new Vector2(0, 0)),
+      radius: uniform(0),
+      band: uniform(0.35),
+      noiseScale: uniform(0.9),
+      noiseAmount: uniform(0.5),
+      seed: uniform(new Vector2(7.3, 2.9)),
+      scorchColor: uniform(new Color('#221a14')),
+      glowColor: uniform(new Color('#ff6a1f')),
+      glowStrength: uniform(1.6),
+    }),
+    []
+  )
+
+  // 延焼パラメータ（radius は CPU 側=Scene が進めるので即時反映）
+  useEffect(() => {
+    burnUniforms.radius.value = fireRadius
+    if (fireIgnition) burnUniforms.ignition.value.set(fireIgnition[0], fireIgnition[1])
+  }, [burnUniforms, fireRadius, fireIgnition])
 
   // darken/rough/scale は見た目パラメータなので即時反映
   useEffect(() => {
@@ -710,7 +762,7 @@ function TerrainLayer({
     if (heightInfo && onHeightData) onHeightData(heightInfo)
   }, [heightInfo, onHeightData])
 
-  const material = useMemo(() => createTerrainMaterial(mergedColors, texMap, seaLevel, elevationStops, wetUniforms, accUniforms), [mergedColors, texMap, seaLevel, elevationStops, wetUniforms, accUniforms])
+  const material = useMemo(() => createTerrainMaterial(mergedColors, texMap, seaLevel, elevationStops, wetUniforms, accUniforms, burnUniforms), [mergedColors, texMap, seaLevel, elevationStops, wetUniforms, accUniforms, burnUniforms])
 
   useEffect(() => {
     return () => {

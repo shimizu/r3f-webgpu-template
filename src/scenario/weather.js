@@ -23,6 +23,7 @@ export const DEFAULT_WEATHER = {
   cloudType: 'stratus', // 雲タイプ（変更は再コンパイルを伴う）
   lightningRate: 0, // 落雷頻度（回/分。0 = 雷なし）
   tornadoStrength: 0, // 竜巻の強さ 0..1（0 = なし）
+  fireProgress: 0, // 山火事の延焼進行 0..1（0 = なし。半径への変換は Scene 側）
 }
 
 // weather → 各レイヤーの入力値。連動ルールはここだけに書く
@@ -52,8 +53,9 @@ export function deriveLayerInputs(weather) {
       w.floodLevel > 0.02 ? 0.9 : 0
     ),
 
-    // 雲（明示値のみ）
-    cloudCoverage: w.cloudCoverage,
+    // 雲（明示値のみ）。ただし山火事中は煙 raymarch と GPU 予算を折半する
+    // ため、延焼進行に応じて通常雲を絞る（plan.md D5-5c の予算ルール）
+    cloudCoverage: w.cloudCoverage * (1 - 0.6 * w.fireProgress),
     cloudType: w.cloudType,
 
     // 雷（ポアソン発火のレートとして LightningLayer が消費）
@@ -62,5 +64,9 @@ export function deriveLayerInputs(weather) {
     // 竜巻（0.01 未満はマウントしない）
     tornadoActive: w.tornadoStrength > 0.01,
     tornadoStrength: w.tornadoStrength,
+
+    // 山火事（延焼進行。0 で無効）
+    fireActive: w.fireProgress > 0.001,
+    fireProgress: w.fireProgress,
   }
 }
