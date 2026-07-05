@@ -25,6 +25,7 @@ import {
   screenCoordinate,
   smoothstep,
   time,
+  uniform,
   varying,
   vec2,
   vec3,
@@ -218,14 +219,17 @@ function hgPhase(cosTheta, g) {
 // 密度関数ファクトリ
 // ============================================================
 
-// preset と coverage から密度サンプラを2段構えで構築する。
+// preset と coverage uniforms から密度サンプラを2段構えで構築する。
 // - sampleBase: weather(2D fBM) × coverage remap × 垂直プロファイル × 端フェードのみの
 //   安い密度。空空間の判定と、太陽方向の光学深度マーチに使う
 // - sampleDensity: base が正の場所だけ 3D shape / detail の侵食を評価するフル密度。
 //   空空間で 3D ノイズを評価しないことが GPU 負荷（TDR 対策）の要
 // ノイズ座標はワールド空間（scale による歪みなし・複数マウントで位相が変わる）。
 // ライトマーチはボックス外の localPos も渡すが、プロファイルと端フェードで自然に 0 になる
-function createDensitySamplers(preset, coverage, quality) {
+// cov = { threshold, upper } の uniform ノード。coverage は「remap の閾値シフト」として
+// 効かせる（最終密度への乗算ではない）設計で、値の計算はコンポーネント側
+// （applyCoverageUniforms）が行い、スライダー操作では再コンパイルが走らない
+function createDensitySamplers(preset, cov, quality) {
   // 品質モード別のノイズ選択。パイプライン（remap・プロファイル・侵食の組織化）は
   // 共通で、fBm と detail のノイズ実装だけを差し替える
   const cheap = quality !== 'high'
@@ -234,12 +238,6 @@ function createDensitySamplers(preset, coverage, quality) {
   const fbm01 = cheap
     ? (p, octaves) => clamp(valueFbm3(p, octaves), 0, 1)
     : (p, octaves) => clamp(mx_fractal_noise_float(p, octaves).mul(0.5).add(0.5), 0, 1)
-  // coverage は「remap の閾値シフト」として効かせる（最終密度への乗算ではない）。
-  // coverage が大きい → threshold が下がる → weather のより広い領域が雲化する
-  const covered = Math.min(Math.max(coverage + preset.coverageBias, 0), 1)
-  const threshold = 1 - covered
-  let upper = Math.min(threshold + preset.coverageSoftness, 1)
-  if (upper - threshold < 1e-4) upper = threshold + 1e-4
 
   // cirrus の高さシア込みの X 座標（shear=0 なら worldP.x のまま）
   const shearedX = (worldP, h) =>
@@ -264,7 +262,7 @@ function createDensitySamplers(preset, coverage, quality) {
     const weather = fbm01(weatherP, preset.weatherOctaves)
 
     // --- 2) coverage remap ---
-    const base = smoothstep(threshold, upper, weather)
+    const base = smoothstep(cov.threshold, cov.upper, weather)
 
     // --- 3) 垂直プロファイル ---
     // 減少側の smoothstep(edge0 > edge1) は仕様未定義なので必ず oneMinus 形で書く
@@ -333,9 +331,20 @@ function createDensitySamplers(preset, coverage, quality) {
 // マテリアルファクトリ
 // ============================================================
 
-function createCloudMaterial({ type, coverage, steps, quality }) {
+// coverage（0..1）と preset から remap 閾値を計算して uniform に反映する。
+// coverage が大きい → threshold が下がる → weather のより広い領域が雲化する
+function applyCoverageUniforms(cov, preset, coverage) {
+  const covered = Math.min(Math.max(coverage + preset.coverageBias, 0), 1)
+  const threshold = 1 - covered
+  let upper = Math.min(threshold + preset.coverageSoftness, 1)
+  if (upper - threshold < 1e-4) upper = threshold + 1e-4
+  cov.threshold.value = threshold
+  cov.upper.value = upper
+}
+
+function createCloudMaterial({ type, cov, steps, quality }) {
   const preset = CLOUD_TYPES[type] ?? CLOUD_TYPES[CLOUD_DEFAULTS.type]
-  const { sampleBase, sampleDensity } = createDensitySamplers(preset, coverage, quality)
+  const { sampleBase, sampleDensity } = createDensitySamplers(preset, cov, quality)
 
   const material = new MeshBasicNodeMaterial({
     transparent: true,
@@ -438,7 +447,8 @@ function createCloudMaterial({ type, coverage, steps, quality }) {
  * @param {number} width - XZ 範囲の幅（ワールド単位）
  * @param {number} depth - XZ 範囲の奥行
  * @param {number} thickness - 雲層の厚み（Y）
- * @param {number} coverage - 雲量 0..1（remap 閾値シフト: 面積が変わる）
+ * @param {number} coverage - 雲量 0..1（remap 閾値シフト: 面積が変わる）。
+ *   uniform 駆動なのでスライダー変更で再コンパイルは走らない
  * @param {string} type - 'cumulus' | 'stratus' | 'cirrus'
  * @param {number} steps - raymarch サンプル数（重い場合は 32 へ）
  * @param {string} quality - 'low'（軽量 value noise、既定）| 'high'（mx Perlin + Worley）
@@ -454,10 +464,20 @@ function CloudLayer({
   quality = CLOUD_DEFAULTS.quality,
   position = DEFAULT_POSITION,
 }) {
+  // coverage の remap 閾値は uniform 化（生成一度きり、値更新のみ）
+  const cov = useMemo(
+    () => ({ threshold: uniform(0.5), upper: uniform(0.6) }),
+    []
+  )
+  useEffect(() => {
+    const preset = CLOUD_TYPES[type] ?? CLOUD_TYPES[CLOUD_DEFAULTS.type]
+    applyCoverageUniforms(cov, preset, coverage)
+  }, [cov, type, coverage])
+
   // 位置・寸法は modelWorldMatrix が吸収するので material 依存はシェーダ定数のみ
   const material = useMemo(
-    () => createCloudMaterial({ type, coverage, steps, quality }),
-    [type, coverage, steps, quality]
+    () => createCloudMaterial({ type, cov, steps, quality }),
+    [type, cov, steps, quality]
   )
 
   useEffect(() => () => material.dispose(), [material])

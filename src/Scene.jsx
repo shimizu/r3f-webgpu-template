@@ -58,8 +58,14 @@ function Scene({ entityCount = 2000 }) {
       label: '草の配置',
     },
   })
-  const { wetness, cloudQuality } = useControls('天候', {
+  const { wetness, cloudType, cloudCoverage, cloudQuality } = useControls('天候', {
     wetness: { value: 0, min: 0, max: 1, step: 0.01, label: '地面の濡れ' },
+    cloudType: {
+      value: 'stratus',
+      options: { '層雲': 'stratus', '積雲': 'cumulus', '巻雲': 'cirrus' },
+      label: '雲のタイプ',
+    },
+    cloudCoverage: { value: 0.65, min: 0, max: 1, step: 0.01, label: '雲量' },
     cloudQuality: {
       value: 'low',
       options: { '軽量': 'low', '高品質': 'high' },
@@ -138,13 +144,14 @@ function Scene({ entityCount = 2000 }) {
       />      
       */}
 
-      {/* 体積雲: 高層の巻雲（薄く広く、レイヤー重ねのデモ。薄い層なので steps 少なめ） */}
+      {/* 体積雲（タイプ・雲量・品質は leva「天候」フォルダで変更。
+          雲量は uniform 駆動、タイプ・品質の切替は再コンパイルが走る） */}
       <CloudLayer
         width={21.3}
         depth={12.6}
         thickness={1.5}
-        coverage={0.65}
-        type='stratus'
+        coverage={cloudCoverage}
+        type={cloudType}
         steps={12}
         quality={cloudQuality}
         position={[0, 5, 0]}
