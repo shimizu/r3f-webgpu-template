@@ -51,6 +51,7 @@ function SnowLayer({
   particleCount = 12000,
   snowSpeed = 0.012,
   wind = DEFAULT_WIND,
+  intensity = 1, // 雪量 0..1（uniform 駆動。粒数と風の強さが連動、再コンパイルなし）
 }) {
   const renderer = useThree((state) => state.gl)
   const systemRef = useRef(null)
@@ -120,6 +121,11 @@ function SnowLayer({
 
     return { geometry, material, mesh, system }
   }, [particleCount, width, depth, topY, snowSpeed, windX, windY, windZ, heightSampler])
+
+  // 雪量は uniform 駆動（resources 再生成なし）
+  useEffect(() => {
+    resources.system.setIntensity(intensity)
+  }, [resources, intensity])
 
   useEffect(() => {
     resources.system.init(renderer)

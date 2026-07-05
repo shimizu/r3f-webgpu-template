@@ -79,6 +79,16 @@ CPU(受信・パック) → GPU(投影・補間) → Draw(インスタンス描�
 - `MovingEntitiesLayer` — GPU 移動体（船舶・航空機）の補間描画
 - `Labels3DLayer` — drei `<Html>` による 3D 空間内の HTML ラベル（地名等）
 
+### シナリオ層（`src/scenario/`）
+
+災害シナリオと天候連動の一元化（plan.md Phase 3）:
+
+- `weather.js` — `DEFAULT_WEATHER` と `deriveLayerInputs(weather)`。「雨→濡れ」「浸水→濁り」等の連動ルールはここだけに書く（Scene に直書きしない）。霧・雲量は明示値のみで自動連動しない
+- `scenarios.js` — 天候キーフレーム列（`SCENARIOS`）と `sampleScenario(scenario, t)`（smoothstep 補間）。各キーフレームはそのシナリオで動かす全フィールドを毎回書くこと。cloudType はシナリオ固定（再コンパイル対策）
+- `useScenario.js` — leva「シナリオ」フォルダ（選択/再生/進行）と useFrame 進行。weather state は 0.25 秒間隔にスロットリング（毎フレーム再レンダー回避）。none 選択時は null を返し手動（天候フォルダ）にフォールバック
+
+新しい天候連動を足すときは deriveLayerInputs に、新しい災害の演出は SCENARIOS のキーフレームに書く。
+
 ### マテリアルベースライン
 
 `MaterialSamplesLayer` のマテリアルサンプルが lookdev の基準（`Matte` → `Semi Gloss` → `Metal` → `Mirror` → `Glass`）。マテリアル調整の指示（「もっとマット」「ガラスっぽく」等）は、これらプリセットからの相対調整を優先する。新規マテリアルをゼロから作るより、最も近いプリセットから調整すること。
