@@ -1,17 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useFrame } from '@react-three/fiber'
-import { BufferGeometry, Float32BufferAttribute, SRGBColorSpace, TextureLoader, Uint32BufferAttribute, Vector2 } from 'three'
+import { BufferGeometry, Color, Float32BufferAttribute, SRGBColorSpace, TextureLoader, Uint32BufferAttribute, Vector2 } from 'three'
 import { MeshPhysicalNodeMaterial } from 'three/webgpu'
 import {
   attribute,
+  clamp,
   color,
   float,
   mix,
+  normalWorld,
   positionWorld,
   smoothstep,
   texture,
+  transformNormalToView,
   uniform,
   uv,
+  vec3,
 } from 'three/tsl'
 import { fromArrayBuffer } from 'geotiff'
 
@@ -40,8 +44,10 @@ const DEFAULT_COLORS = {
 }
 
 // wet は濡れ表現の uniform セット（coverage/darken/rough/scale/edge/seed）。
-// 呼び出し側が保持して .value 更新するので、スライダー操作で再コンパイルは走らない
-function createTerrainMaterial(colors, texMap, seaLevel = 0, stops = ELEVATION_STOPS, wet = null) {
+// acc は堆積（雪/苔）の uniform セット（amount/snowLine/band/aspect/flatThreshold/
+// patchScale/edge/seed/color/roughness/flatten）。
+// どちらも呼び出し側が保持して .value 更新するので、スライダー操作で再コンパイルは走らない
+function createTerrainMaterial(colors, texMap, seaLevel = 0, stops = ELEVATION_STOPS, wet = null, acc = null) {
   const material = new MeshPhysicalNodeMaterial({
     roughness: TERRAIN_MATERIAL.roughness,
     metalness: TERRAIN_MATERIAL.metalness,
@@ -52,6 +58,9 @@ function createTerrainMaterial(colors, texMap, seaLevel = 0, stops = ELEVATION_S
   const sideColor = color(colors.side)
   const elevation = attribute('aElevation', 'float')
 
+  // roughness は濡れ・堆積を順に積むので変数で持つ
+  let roughNode = float(TERRAIN_MATERIAL.roughness)
+
   // 濡れ表現: fBM パッチで albedo を暗く・roughness を下げる（task.md T2）。
   // 陸地（海面標高より上）の上面のみに効かせ、海色と側面には影響させない
   let wetMask = null
@@ -60,14 +69,35 @@ function createTerrainMaterial(colors, texMap, seaLevel = 0, stops = ELEVATION_S
     wetMask = coverageMask(positionWorld.xz, wet.scale, wet.seed, wet.coverage, wet.edge)
       .mul(land)
       .mul(sideMask.oneMinus())
-    material.roughnessNode = mix(float(TERRAIN_MATERIAL.roughness), wet.rough, wetMask)
+    roughNode = mix(roughNode, wet.rough, wetMask)
   }
   const applyWet = (c) => (wetMask ? c.mul(mix(float(1), wet.darken, wetMask)) : c)
+
+  // 堆積（雪/苔）: 法線の向き（平らな上面 + 北斜面）× 標高（雪線）× パッチで
+  // 積もり量を決め、albedo を堆積色へ・roughness を雪側へ・法線を上方向へ寄せる。
+  // 北方向 = ワールド -Z（TerrainLayer の投影規約: 北 = -Z = 画面奥）
+  let accMask = null
+  if (acc) {
+    const up = clamp(normalWorld.y, 0, 1)
+    const settle = smoothstep(acc.flatThreshold, 1, up) // 平らな面ほど積もる
+    const north = clamp(normalWorld.z.negate(), 0, 1) // 北向き度
+    const effElev = elevation.add(north.mul(acc.aspect)) // 北斜面は実効標高↑ = 雪線↓
+    const altitude = smoothstep(acc.snowLine, acc.snowLine.add(acc.band), effElev)
+    const patch = coverageMask(positionWorld.xz, acc.patchScale, acc.seed, acc.amount, acc.edge)
+    accMask = altitude.mul(settle).mul(patch).mul(sideMask.oneMinus())
+    roughNode = mix(roughNode, acc.roughness, accMask)
+    // 堆積域は法線を上方向へ寄せて柔らかい被膜に見せる
+    const upView = transformNormalToView(vec3(0, 1, 0))
+    material.normalNode = mix(transformNormalToView(normalWorld), upView, accMask.mul(acc.flatten))
+  }
+  const applyAcc = (c) => (accMask ? mix(c, acc.color, accMask) : c)
+
+  material.roughnessNode = roughNode
 
   if (texMap) {
     const texNode = texture(texMap)
     const texColor = texNode.sample(uv())
-    material.colorNode = mix(applyWet(texColor), sideColor, sideMask)
+    material.colorNode = mix(applyAcc(applyWet(texColor)), sideColor, sideMask)
   } else {
     const s = float(seaLevel)
     const c1 = mix(color(colors.deepOcean), color(colors.shallowOcean),
@@ -83,7 +113,7 @@ function createTerrainMaterial(colors, texMap, seaLevel = 0, stops = ELEVATION_S
     const finalColor = mix(c5, color(colors.peak),
       smoothstep(float(stops[5]).add(s), float(stops[6]).add(s), elevation))
 
-    material.colorNode = mix(applyWet(finalColor), sideColor, sideMask)
+    material.colorNode = mix(applyAcc(applyWet(finalColor)), sideColor, sideMask)
   }
 
   return material
@@ -456,6 +486,16 @@ function TerrainLayer({
   wetScale = 0.35, // 濡れパッチの空間周波数
   wetRiseTime = 1.5, // 濡れの立ち上がり時定数（秒。降り始めは速め）
   wetFallTime = 8, // 乾きの時定数（秒。止んだ後はゆっくり乾く）
+  // --- 堆積（雪/苔）: 既定は雪プリセット、amount 0 で OFF ---
+  snowAmount = 0, // マスター量 0..1（0 = 堆積なし）
+  snowLine = 0.55, // 堆積が始まる正規化標高
+  snowBand = 0.15, // 雪線の遷移幅
+  snowAspect = 0.15, // 北斜面が実効的に雪線を下げる量
+  snowFlatThreshold = 0.3, // 積もる面の傾き閾値（normalWorld.y）
+  snowColor = '#eef4ff', // 堆積色（白=雪 / 緑にすれば苔）
+  snowRoughness = 0.9, // 堆積面の roughness（雪はマット）
+  snowNormalFlatten = 0.5, // 法線を上方向へ寄せる強さ
+  snowPatchScale = 0.4, // 堆積パッチの空間周波数
 }) {
   const [demData, setDemData] = useState(null)
   const [texMap, setTexMap] = useState(null)
@@ -474,12 +514,54 @@ function TerrainLayer({
     []
   )
 
+  // 堆積 uniform セット（生成一度きり、値は .value 更新のみ）
+  const accUniforms = useMemo(
+    () => ({
+      amount: uniform(0),
+      snowLine: uniform(0.55),
+      band: uniform(0.15),
+      aspect: uniform(0.15),
+      flatThreshold: uniform(0.3),
+      patchScale: uniform(0.4),
+      edge: uniform(0.14),
+      seed: uniform(new Vector2(12, 4)),
+      color: uniform(new Color('#eef4ff')),
+      roughness: uniform(0.9),
+      flatten: uniform(0.5),
+    }),
+    []
+  )
+
   // darken/rough/scale は見た目パラメータなので即時反映
   useEffect(() => {
     wetUniforms.darken.value = wetDarken
     wetUniforms.rough.value = wetRoughness
     wetUniforms.scale.value = wetScale
   }, [wetUniforms, wetDarken, wetRoughness, wetScale])
+
+  // 堆積パラメータ（すべて即時反映。時定数追従は不要）
+  useEffect(() => {
+    accUniforms.amount.value = snowAmount
+    accUniforms.snowLine.value = snowLine
+    accUniforms.band.value = snowBand
+    accUniforms.aspect.value = snowAspect
+    accUniforms.flatThreshold.value = snowFlatThreshold
+    accUniforms.patchScale.value = snowPatchScale
+    accUniforms.roughness.value = snowRoughness
+    accUniforms.flatten.value = snowNormalFlatten
+    accUniforms.color.value.set(snowColor)
+  }, [
+    accUniforms,
+    snowAmount,
+    snowLine,
+    snowBand,
+    snowAspect,
+    snowFlatThreshold,
+    snowPatchScale,
+    snowRoughness,
+    snowNormalFlatten,
+    snowColor,
+  ])
 
   // coverage（濡れ量）は wetness を目標に非対称の時定数で追従させる。
   // 降雨 ON/OFF に対して「降り始めは速く濡れ、止んだ後はゆっくり乾く」挙動になる。
@@ -607,7 +689,7 @@ function TerrainLayer({
     if (heightInfo && onHeightData) onHeightData(heightInfo)
   }, [heightInfo, onHeightData])
 
-  const material = useMemo(() => createTerrainMaterial(mergedColors, texMap, seaLevel, elevationStops, wetUniforms), [mergedColors, texMap, seaLevel, elevationStops, wetUniforms])
+  const material = useMemo(() => createTerrainMaterial(mergedColors, texMap, seaLevel, elevationStops, wetUniforms, accUniforms), [mergedColors, texMap, seaLevel, elevationStops, wetUniforms, accUniforms])
 
   useEffect(() => {
     return () => {
