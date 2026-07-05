@@ -188,7 +188,7 @@ const currentLat = mix(prevLat, lat, blend).toVar()
 - 日付変更線ラッピングを適用する
 - ワールド座標を出力する
 
-> 補足: `createProjectionPass` は実装済みだが、現状どのレイヤーからも参照されていない。移動を伴わない静的点群を投影する選択肢として用意してあるが、現行の lookdev 環境では移動体の描画に Interpolation Pass のみを使っているため未配線である。静的点群を描画する場面が出てきた段階で配線する想定。
+> 補足: 独立した Projection Pass 実装（`createProjectionPass.js`）はかつて存在したが、移動体は Interpolation Pass のみで描画しており未配線のままだったため、退役整理で削除した。静的点群を投影する必要が出た場合は、本節の設計に沿って Interpolation Pass から補間ロジックを外した pass を新規に起こす想定。
 
 ### Interpolation Pass
 

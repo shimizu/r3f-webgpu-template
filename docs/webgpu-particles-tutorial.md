@@ -621,9 +621,12 @@ const nextPosition = currentPosition.add(velocity.mul(frameScale))
 GPU リソースは JavaScript のガベージコレクションでは解放されない。
 明示的に `.dispose()` を呼ぶ必要がある。ここで重要なのは **破棄の責務を分けている** こと。
 
-- compute runner（`runBarsCompute.js` 相当）の `destroy()` は、自分が作った
-  `computeNode.dispose()` **のみ** を担当する。geometry / material は compute 側では
-  生成していないので、ここでは破棄しない。
+- compute runner（本リポジトリの `runRainCompute.js` / `runSnowCompute.js` など）の
+  `destroy()` は、自分が作った compute ノードと storage バッファの破棄 **のみ** を担当する。
+  geometry / material は compute 側では生成していないので、ここでは破棄しない。
+  なお storage バッファの確保・解放は `src/compute/particleBuffers.js` の
+  `createParticleBuffers()`（`{ attributes, nodes, dispose }` を返す）に集約されており、
+  各 runner は `buffers.dispose(renderer)` を呼ぶだけでよい。
 - geometry / material は描画レイヤー（`RainLayer.jsx` 相当）が生成しているため、
   その破棄も描画側の責任。React なら `useEffect` の cleanup でまとめて破棄する。
 

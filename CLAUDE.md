@@ -139,10 +139,11 @@ WebGPU ネイティブの後処理パイプライン:
 
 ## 参考ドキュメント
 
+- `docs/disaster-simulation-architecture.md` — 災害ジオラマ可視化アーキテクチャ（地域プリセット・共有部品・各災害・シナリオ層）
 - `docs/gpu-gis-particle-architecture.md` — GPU-GIS アーキテクチャ詳細ガイド
 - `docs/webgpu-particles-tutorial.md` — WebGPU パーティクル入門チュートリアル
-- `docs/r3f-computeshader_llm.md` — R3F + ComputeShader の実装リファレンス
-- `docs/rain-terrain-collision.md` — 降雨パーティクルと地形衝突の設計
+- `docs/r3f-computeshader_llm.md` — R3F + ComputeShader の実装リファレンス（§18〜20 に共有部品）
+- `docs/rain-terrain-collision.md` — 地形衝突と共有ハイトフィールドの設計
 - `docs/webgpu-quality-enhancement.md` — WebGPU 品質向上の指針
 - `docs/projection-formulas.md` — 投影図法の数式リファレンス（projectionCPU/GPU の実装根拠）
 - `AGENTS.md` — リポジトリガイドライン（コミット規約、PR要件等）

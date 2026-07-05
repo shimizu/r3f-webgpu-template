@@ -429,11 +429,18 @@ headingOut.assign(headingDeg.mul(DEG2RAD))
 
 ---
 
-## 13. パーティクル物理シミュレーション（レガシーパス）
+## 13. パーティクル物理シミュレーション（災害パーティクルの基本形）
 
 ### 技術: 速度・寿命・反射を持つ独立粒子系の GPU 実装
 
-`runBarsCompute.js` に実装された汎用パーティクルシステム（現在は GIS パスに置き換え済みだが技術的に重要）。
+初期のデモ `runBarsCompute.js`（退役整理で削除済み）で確立したこのパターンは、
+現在は災害パーティクル群の共通の骨格として生きている。
+`runRainCompute.js`（降雨）をテンプレートに、`runSnowCompute.js`（降雪）・
+`runEmberCompute.js`（火の粉）・`runVortexCompute.js`（竜巻デブリ）が
+コピーベースで派生している。storage バッファの確保・解放は
+`particleBuffers.js`、風場は `src/tsl/windField.js`、地形衝突は
+`src/tsl/sampleHeightField.js` の共有サンプラに切り出されている（後述 §18〜§20）。
+以下は共通の骨格を最小構成で示したもの。
 
 **4つの Storage Buffer:**
 ```js
@@ -565,6 +572,90 @@ build: {
 - Rollup の `manualChunks(id)` 関数ではなく、Rolldown の `codeSplitting.groups`（宣言的な `{ name, test, priority }` 配列）を使う
 - `test` は文字列マッチではなく**正規表現**。`priority` が高いグループから順に判定される
 - Three.js の WebGPU レンダラー (`three-webgpu`) と TSL ノードシステム (`three-tsl`) を独立チャンクに分離。priority により `three-core` (20) より先にマッチする
+
+---
+
+## 18. パーティクルバッファの定型化（particleBuffers.js）
+
+### 技術: フィールド定義から storage バッファ群を一括生成・破棄
+
+災害パーティクル（雨・雪・火の粉・竜巻デブリ）は「複数の storage バッファを確保 →
+compute から参照 → destroy でまとめて解放」という同じ定型を持つ。この定型を
+`createParticleBuffers(count, fields)` に切り出した。
+
+```js
+import { createParticleBuffers } from '../compute/particleBuffers'
+
+const buffers = createParticleBuffers(particleCount, {
+  pos: { itemSize: 3, data: initialPositions }, // 初期値付き
+  vel: 3,                                        // ゼロ初期化（itemSize だけ）
+  life: 1,
+})
+buffers.nodes.pos.element(instanceIndex) // compute / vertex から参照
+buffers.dispose(renderer)                // destroy 時にまとめて解放
+```
+
+- `fields` の各値は `itemSize`（number）か `{ itemSize, data }`。`itemSize` 1/2/3/4 が
+  それぞれ float/vec2/vec3/vec4 に対応する
+- `dispose()` は内部で `disposeStorageAttributes()` を呼ぶ（standalone な
+  StorageBufferAttribute はジオメトリ非経由なので明示解放が必要）
+- **ランナー自体は抽象化しない**。update Fn の中身（物理）は災害ごとに本質的に
+  異なるため、共有するのはバッファ定型・風場・高さサンプラの 3 部品に絞り、
+  `runXxxCompute.js` は `runRainCompute.js` をテンプレートにコピーベースで派生させる
+
+---
+
+## 19. 風場の共有 Fn（windField.js）
+
+### 技術: FBM 乱流 + 突風 + 渦を「位置・時刻 → 風力」の Fn にまとめる
+
+3 オクターブの sin/cos FBM + 突風を `createWindField()` として切り出した。
+戻り値 `windAt(pos, time)` が風力 vec3 を返す（フレームスケールは呼び出し側で乗算）。
+strength / scale は uniform でも JS 数値でも渡せる。
+
+```js
+const { windAt } = createWindField({
+  turbScale, turbStrength, gustFrequency, gustStrength, // uniform 可
+  timeScale, yDamping, gustSpatialScale,
+  vortex, // 省略可: { center(vec2 uniform), radius, tangential, inflow, updraft }
+})
+const windForce = windAt(currentPos, timeNode).mul(frameScale)
+```
+
+- `vortex` を渡すと Rankine 渦近似の渦項（接線 + 中心吸引 + コア内上昇気流）が
+  合成される。竜巻（`runVortexCompute.js`）が使用し、`center` を CPU で毎フレーム
+  動かすと竜巻本体が移動する
+- 雨は弱い乱流、雪は横流れの強い乱流、というようにパラメータ差だけで質感を作り分ける
+
+---
+
+## 20. 地形ハイトフィールドの共有（HeightFieldContext + sampleHeightField.js）
+
+### 技術: DEM の GPU バッファを 1 つだけ持ち、バイリニアサンプラを配布する
+
+地形の高さは `TerrainLayer` が `onHeightData` で発行する `heightInfo`
+（`{ heights, cols, rows, terrainWidth, terrainDepth, minY, rangeY }`）に集約される。
+これを `HeightFieldContext`（Provider）が受け取り、DEM の `StorageBufferAttribute` を
+**1 個だけ**生成して全消費者に配る。消費者ごとに DEM の GPU コピーが増えるのを防ぐ。
+
+```jsx
+// Provider（Scene をラップ）
+<HeightFieldProvider>{/* TerrainLayer が setHeightInfo、各災害が useHeightField */}</HeightFieldProvider>
+
+// 消費側
+const { heightInfo, gpu } = useHeightField()
+const sampler = gpu?.sampler // { heightAt, normalAt, elevationAt }
+groundY = sampler.heightAt(vec2(pos.x, pos.z)) // compute 内でバイリニア補間
+```
+
+- サンプラは `src/tsl/sampleHeightField.js` の `createHeightFieldSampler()`。
+  `groundField.js`（手続きマウンド版）と同じ `{ heightAt, normalAt, elevationAt }`
+  インターフェースを持ち、高さ源が DEM か手続き地形かを消費者が意識しない
+- **バイリニア補間**に統一（旧 RainLayer は最近傍だった）。草の接地・雨/雪/火の粉の
+  地形衝突・竜巻デブリのスポーンがすべて同じ実装を共有し、精度が揃う
+- CPU 側で座標を決める用途（落雷点・竜巻中心の接地）には同ファイルの
+  `cpuHeightAt(heightInfo, x, z)` を使う（GPU と同式）
+- `elevationAt`（正規化標高 0..1）は雪線・草の生育域・山火事の延焼判定で使う
 
 ---
 

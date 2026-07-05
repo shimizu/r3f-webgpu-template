@@ -1,16 +1,28 @@
-# RainLayer - TerrainLayer 衝突判定ドキュメント
+# 地形衝突と共有ハイトフィールド
+
+> このドキュメントはもともと RainLayer 専用の衝突判定を扱っていたが、地形の高さ場は
+> `HeightFieldContext` + 共有バイリニアサンプラに一般化され、雨だけでなく雪・火の粉・
+> 竜巻デブリの地形衝突、草の接地、山火事の延焼判定まで同じ仕組みを共有するようになった。
+> 本ドキュメントもその現状に合わせて更新している。
 
 ## データフロー
 
 ```
 TerrainLayer (GeoTIFF 読込)
   → buildTerrainGeometry (CPU: DEM → Float32Array)
-  → heightInfo = { heights, cols, rows, terrainWidth, terrainDepth }
-  → Scene.jsx: onHeightData コールバックで state に保持
-  → RainLayer (props 経由で受け取り)
-  → createRainComputeRunner (GPU compute 初期化)
-  → rainComputeNode (毎フレーム GPU 上で衝突判定 + リスポーン)
+  → heightInfo = { heights, cols, rows, terrainWidth, terrainDepth, minY, rangeY }
+  → onHeightData コールバック → HeightFieldContext (Provider) が保持
+      ├─ StorageBufferAttribute を 1 個だけ生成（DEM の GPU コピーを共有）
+      └─ createHeightFieldSampler で { heightAt, normalAt, elevationAt } を配布
+  → 各消費者が useHeightField() でサンプラを取得
+      ├─ RainLayer / SnowLayer / FireLayer … 地形衝突（compute）
+      ├─ GrassLayer … 接地・生育マスク（vertex）
+      └─ TerrainLayer … 雪線・延焼標高判定（fragment、elevationAt）
 ```
+
+以前は heightInfo を Scene の `useState` で保持し props でバケツリレーしていたが、
+消費者（草・雨）が各自 DEM の GPU バッファを複製していた。現在は Provider が
+バッファを 1 個だけ持ち、サンプラを配ることで複製を排除している。
 
 ## heightInfo の構造
 
@@ -23,6 +35,8 @@ TerrainLayer が `onHeightData` で返すオブジェクト。
 | `rows` | number | DEM グリッドの行数（Z 方向） |
 | `terrainWidth` | number | ワールド座標での幅（X 方向） |
 | `terrainDepth` | number | ワールド座標での奥行き（Z 方向） |
+| `minY` | number | 正規化標高 0 に対応するローカル Y（`elevationAt` の逆算に使う） |
+| `rangeY` | number | 正規化標高 0..1 に対応するローカル Y レンジ |
 
 ### 高さデータの生成過程（TerrainLayer.jsx）
 
@@ -39,14 +53,18 @@ TerrainLayer が `onHeightData` で返すオブジェクト。
 
 ### バッファ（StorageBufferAttribute）
 
-| バッファ | サイズ | 用途 |
-|---------|--------|------|
-| `positionAttribute` | particleCount × 3 | 雨粒の現在位置（読み書き） |
-| `velocityAttribute` | particleCount × 3 | 雨粒の速度ベクトル（読み書き） |
-| `splashPosAttribute` | particleCount × 3 | スプラッシュ粒子の位置 |
-| `splashVelAttribute` | particleCount × 3 | スプラッシュ粒子の速度 |
-| `splashLifeAttribute` | particleCount × 1 | スプラッシュの残り寿命 |
-| `heightMapAttribute` | cols × rows × 1 | 地形高さマップ（読み取り専用） |
+雨・スプラッシュのバッファは `src/compute/particleBuffers.js` の
+`createParticleBuffers()` でまとめて確保する。地形高さマップは各ランナーが
+自前で複製せず、`HeightFieldContext` が保持する 1 個を共有サンプラ経由で参照する。
+
+| バッファ | サイズ | 用途 | 所有者 |
+|---------|--------|------|--------|
+| `pos` | particleCount × 3 | 雨粒の現在位置（読み書き） | ランナー（particleBuffers） |
+| `vel` | particleCount × 3 | 雨粒の速度ベクトル（読み書き） | ランナー |
+| `splashPos` | particleCount × 3 | スプラッシュ粒子の位置 | ランナー |
+| `splashVel` | particleCount × 3 | スプラッシュ粒子の速度 | ランナー |
+| `splashLife` | particleCount × 1 | スプラッシュの残り寿命 | ランナー |
+| 高さマップ | cols × rows × 1 | 地形高さ（読み取り専用） | **HeightFieldContext（共有）** |
 
 ### Uniform
 
@@ -58,11 +76,14 @@ TerrainLayer が `onHeightData` で返すオブジェクト。
 | `topYNode` | 雨の最大高さ |
 | `rainSpeedNode` | 基本落下速度 |
 | `windXNode` / `windZNode` | 定常風 |
-| `heightColsNode` / `heightRowsNode` | 高さマップのグリッドサイズ |
-| `terrainHalfWNode` / `terrainHalfDNode` | テラインの半幅 / 半奥行き |
-| `terrainWidthNode` / `terrainDepthNode` | テラインの幅 / 奥行き |
-| `turbScaleNode` / `turbStrengthNode` | 乱流パラメータ |
-| `gustFreqNode` / `gustStrengthNode` | 突風パラメータ |
+| `intensityNode` | 雨量 0..1（活性粒数ゲート。粒数・風の強さに連動） |
+| `turbScaleNode` / `turbStrengthNode` | 乱流パラメータ（`windField.js` に渡す） |
+| `gustFreqNode` / `gustStrengthNode` | 突風パラメータ（同上） |
+
+高さマップのグリッドサイズやテライン寸法の uniform は不要になった。座標→高さの
+変換は共有サンプラ（`sampleHeightField.js`）が `terrainWidth/Depth` などを
+生成時にクロージャで束ねているため、compute 側は `heightAt(vec2(x, z))` を
+呼ぶだけでよい。風場の 3 オクターブ FBM も `windField.js` の `windAt()` に移設した。
 
 ## パーティクルのライフサイクル
 
@@ -91,27 +112,33 @@ TerrainLayer が `onHeightData` で返すオブジェクト。
 
 ### 3. 衝突判定（GPU）
 
-```
-// 雨粒の次の位置からテライン座標へ正規化
-u = (nextPos.x + terrainHalfW) / terrainWidth
-v = (nextPos.z + terrainHalfD) / terrainDepth
+地表高さは共有サンプラのバイリニア補間で取得する（旧実装は最近傍だった）。
 
-// [0, 1) にクランプしてグリッド座標に変換
-col = floor(clamp(u, 0, 0.999) × (cols - 1))
-row = floor(clamp(v, 0, 0.999) × (rows - 1))
-
-// 高さマップから地表高さを取得（最近傍法）
-groundY = heights[row × cols + col]
+```js
+// 共有サンプラ（HeightFieldContext から取得）。terrainWidth/Depth 等は
+// サンプラ生成時にクロージャで束ねられているので、渡すのは XZ だけ
+groundY = heightSampler.heightAt(vec2(nextPos.x, nextPos.z))
 
 // 衝突判定
 needsRespawn = (nextPos.y <= groundY) || (|nextPos.x| > halfW) || (|nextPos.z| > halfD)
 ```
 
-heightInfo がない場合は `groundY = 0` にフォールバックする。
+`heightAt` の内部は 4 近傍セルの `mix(mix(h00,h10,tx), mix(h01,h11,tx), tz)`。
+`heightSampler` がない場合は `groundY = 0` にフォールバックする。草の接地・
+雪/火の粉の衝突もこの同じ `heightAt` を使うため、レイヤー間で高さの解釈が揃う。
 
 ### 4. リスポーン（GPU）
 
 衝突または範囲外になった雨粒は天頂（`topY`）のランダム位置に再配置される。`select()` で分岐なく切り替え。
+
+### 5. 雨量ゲート（GPU）
+
+`intensityNode`（0..1）で降る粒数を変える。`instanceIndex < intensity × particleCount`
+の粒だけを「活性」とし、非活性の粒は画面外（`PARKED_Y = -1000`）へ退避する。
+活性化されると `parked` 判定で即リスポーンして降り始める。バッファの再確保も
+シェーダの再コンパイルも起こさず、uniform 更新だけで雨量が連続的に変わる。
+乱流・突風の強さも雨量に連動させる（`setIntensity()`）。同じ活性ゲートを
+`runSnowCompute.js`（雪量）が踏襲している。
 
 ## スプラッシュシステム
 
@@ -129,7 +156,16 @@ heightInfo がない場合は `groundY = 0` にフォールバックする。
 
 ## 実装上の設計判断
 
-- **最近傍法**: 高さサンプリングはバイリニア補間ではなく最近傍。パフォーマンス優先
+- **バイリニア補間へ統一**: 高さサンプリングは共有サンプラのバイリニア補間。
+  以前は最近傍（RainLayer）とバイリニア（GrassLayer）が並存していたが、
+  斜面での衝突が滑らかになる & レイヤー間で高さの解釈が揃う利点を取り、
+  `sampleHeightField.js` に一本化した
+- **GPU バッファの共有**: DEM の高さバッファは `HeightFieldContext` が 1 個だけ持つ。
+  消費者が増えても複製されない
+- **ランナーは抽象化せず共有部品だけ切り出す**: `runXxxCompute.js` は
+  `runRainCompute.js` をテンプレートにコピーベースで派生。共有するのは
+  バッファ定型（particleBuffers）・風場（windField）・高さサンプラ（sampleHeightField）
+  の 3 部品に絞る（update Fn の物理は災害ごとに本質的に異なるため）
 - **分岐回避**: GPU 上で `select()` を使い、SIMD 実行を妨げない
 - **疑似乱数**: `sin/cos` ベースの決定論的ノイズで GPU 親和的に実装
 - **WORKGROUP_SIZE = 64**: 典型的な GPU アーキテクチャに最適化
@@ -138,6 +174,21 @@ heightInfo がない場合は `groundY = 0` にフォールバックする。
 ## 関連ファイル
 
 - `src/layers/RainLayer.jsx` — 雨パーティクル + スプラッシュの描画・compute 呼び出し
-- `src/compute/runRainCompute.js` — GPU compute shader の定義（衝突判定の核心）
+- `src/compute/runRainCompute.js` — 雨の GPU compute（衝突判定の核心・派生のテンプレート）
+- `src/compute/particleBuffers.js` — storage バッファ群の確保・破棄の定型
+- `src/tsl/windField.js` — 3 オクターブ FBM 風場（+ 竜巻用 vortex 項）
+- `src/tsl/sampleHeightField.js` — worldXZ → 高さ/法線/正規化標高の共有サンプラ（`cpuHeightAt` も）
+- `src/gis/HeightFieldContext.jsx` — heightInfo と DEM の GPU バッファを保持・配布
 - `src/layers/TerrainLayer.jsx` — GeoTIFF 読み込み・heightInfo 生成
-- `src/Scene.jsx` — heightInfo の state 管理・コンポーネント間の接続
+- `src/Scene.jsx` — HeightFieldProvider のマウント・各災害レイヤーの接続
+
+## この仕組みを共有する他レイヤー
+
+| レイヤー / ランナー | 高さ場の用途 |
+|---|---|
+| `runSnowCompute.js` / `SnowLayer` | 降雪の着地判定（rest 静止 + フェード） |
+| `runEmberCompute.js` / `FireLayer` | 炎・火の粉のスポーン地表高さ |
+| `runVortexCompute.js` / `TornadoLayer` | 竜巻デブリのスポーン地表・衝突 |
+| `GrassLayer` | 草ブレードの接地（`heightAt`）と生育域（`elevationAt`） |
+| `TerrainLayer` | 雪線・延焼の標高判定（`elevationAt`） |
+| `LightningLayer` / `TornadoLayer` | 落雷点・竜巻中心の接地（CPU 側 `cpuHeightAt`） |
