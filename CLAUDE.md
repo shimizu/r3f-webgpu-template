@@ -53,7 +53,8 @@ CPU(受信・パック) → GPU(投影・補間) → Draw(インスタンス描�
 投影は `<Coordinate>` コンテキストコンポーネントで一元管理する。これがこのプロジェクトの GIS 設計の中核:
 
 - `CoordinateContext.jsx` — `<Coordinate projection view position rotation>` で投影設定を子に提供。子レイヤーは `useProjection()` フックで `{ view, projUniforms, projectionType }` を取得する
-- `views.js` — `WORLD_VIEW` / `JAPAN_VIEW` 等のビュー定義（centerLon/Lat, worldScale, sampleStep など）
+- `regions.js` — 地域プリセット（DEM url・bbox・view・seaLevel・terrain params・labels を 1 オブジェクトに集約）。`regionFootprint()` で投影後フットプリントを bbox から導出。Scene の leva「地域」セレクタで切替
+- `views.js` — DEM を持たない汎用ビュー定義（`WORLD_VIEW` / `JAPAN_VIEW`）。地域ビューは regions.js 側
 - `projectionGPU.js` — 図法の実装。`projectLonLatGPU(lonNode, latNode, uniforms, projectionType)` が TSL ノードを返す。対応図法は `PROJECTIONS` で切替する4種: `equirectangular` / `mercator` / `lambert-cylindrical` / `natural-earth`。日付変更線ラッピング（`normalizeLon`/`normalizeRing`）とポリゴンクリップ（Sutherland-Hodgman）も含む。CPU 側（Geometry 生成）と GPU 側（Shader 実行）で同じ計算式を共有する
 - `projectionUniforms.js` — 投影パラメータから TSL `uniform()` セットを生成。各レイヤー/pass が独立に保持し `update()` で更新
 - `projectionOptions.js` — 投影オプションのデフォルト解決

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useControls } from 'leva'
 import { MapControls } from '@react-three/drei'
 
@@ -14,7 +14,7 @@ import WaterBlobLayer from './layers/WaterBlobLayer'
 import WaterBoxLayer from './layers/WaterBoxLayer'
 import WaterOceanLayer from './layers/WaterOceanLayer'
 import Coordinate from './gis/CoordinateContext'
-import { HORMUZ_VIEW } from './gis/views'
+import { REGIONS, REGION_OPTIONS, regionFootprint } from './gis/regions'
 // eslint-disable-next-line no-unused-vars
 import GeojsonLayer from './layers/GeojsonLayer'
 // eslint-disable-next-line no-unused-vars
@@ -25,32 +25,22 @@ import CloudLayer from './layers/CloudLayer'
 import Labels3DLayer from './layers/Labels3DLayer'
 import GrassLayer from './layers/GrassLayer'
 
-// 移動体モックの生成域（hormuz.tif の bbox 45.85〜65.19 / 21.90〜32.12 の内側）。
-// MovingEntitiesLayer の useMemo 依存になるため、inline ではなく定数で渡す
-// eslint-disable-next-line no-unused-vars
-const ENTITY_REGION = {
-  lonMin: 47,
-  lonMax: 64,
-  latMin: 22.5,
-  latMax: 31.5,
-  lonDrift: -3,
-}
-
 /**
  * シーン全体の構成を定義するコンポーネント。
- * 
+ *
  * 処理の流れ:
  * 1. 背景（空）、照明（ライトリグ）、カメラ操作（MapControls）を配置。
  * 2. GIS コンテキスト（Coordinate）を構築し、地理座標系を 3D 空間に投影。
  * 3. 投影された空間内に地図（GeoJSON）や移動体（MovingEntities）を描画。
+ *
+ * 地域固有の設定（DEM・ビュー・海面標高・移動体生成域等）は regions.js の
+ * 地域プリセットに集約されており、leva の「地域」セレクタで切り替える。
  */
-// TerrainLayer と GrassLayer（海面マスク）で共有する正規化海面標高
-const SEA_LEVEL = 0.19
-
 // eslint-disable-next-line no-unused-vars
 function Scene({ entityCount = 2000 }) {
   const [heightInfo, setHeightInfo] = useState(null)
-  const { showOcean, grassPlacement, postfx } = useControls({
+  const { regionId, showOcean, grassPlacement, postfx } = useControls({
+    regionId: { value: 'hormuz', options: REGION_OPTIONS, label: '地域' },
     showOcean: { value: true, label: '海面を表示' },
     grassPlacement: {
       value: 'terrain',
@@ -86,7 +76,18 @@ function Scene({ entityCount = 2000 }) {
       snowRoughness: { value: 0.9, min: 0, max: 1, step: 0.01, label: 'ラフネス' },
     }
   )
-  
+
+  const region = REGIONS[regionId]
+  // 海面・雲は heightInfo（DEM ロード完了）を待たずにマウントするため、
+  // フットプリントは bbox + view から事前計算する
+  const footprint = useMemo(() => regionFootprint(region), [region])
+
+  // 地域切替時は旧地形の heightInfo を破棄する
+  // （新 DEM ロード完了まで草・雨が旧地形の高さ場に配置されるのを防ぐ）
+  useEffect(() => {
+    setHeightInfo(null)
+  }, [regionId])
+
   return (
     <>
       {/* 太陽光や環境光を一括管理するリグ */}
@@ -116,20 +117,22 @@ function Scene({ entityCount = 2000 }) {
       {grassPlacement === 'terrain' && heightInfo && (
         <GrassLayer
           heightInfo={heightInfo}
-          seaLevel={SEA_LEVEL}
+          seaLevel={region.seaLevel}
           bladeScale={0.4}
           position={[0, 0.5, 0]}
         />
       )}
 
-      {/* GIS: DEM 地形 + GeoJSON を同一投影コンテキストで自動整合 */}
-      <Coordinate projection="equirectangular" view={HORMUZ_VIEW} position={[0, 0.5, 0]}>
+      {/* GIS: DEM 地形 + GeoJSON を同一投影コンテキストで自動整合。
+          地域切替は DEM 再ロードを伴うため key で TerrainLayer を再マウントする */}
+      <Coordinate projection={region.view.projectionType} view={region.view} position={[0, 0.5, 0]}>
         <TerrainLayer
-          url="./dem/hormuz.tif"
-          smooth={1.25}
-          heightScale={0.5}
-          baseHeight={1.5}
-          seaLevel={SEA_LEVEL}
+          key={region.id}
+          url={region.demUrl}
+          smooth={region.terrain.smooth}
+          heightScale={region.terrain.heightScale}
+          baseHeight={region.terrain.baseHeight}
+          seaLevel={region.seaLevel}
           onHeightData={setHeightInfo}
           wetness={Math.max(wetness, rain ? 0.85 : 0)}
           snowAmount={snowAmount}
@@ -154,11 +157,11 @@ function Scene({ entityCount = 2000 }) {
         />
       )}
 
-      {/* 海面レイヤー（投影後の地形フットプリント 21.38 × 12.68 に合わせる） */}
+      {/* 海面レイヤー（投影後の地形フットプリントに合わせる） */}
       {showOcean && (
         <WaterOceanLayer
-          width={21.3}
-          height={12.6}
+          width={footprint.width}
+          height={footprint.depth}
           depth={1}
           opacity={0.85}
           position={[0, 0.5, 0]}
@@ -180,18 +183,18 @@ function Scene({ entityCount = 2000 }) {
       {/* 体積雲（タイプ・雲量・品質は leva「天候」フォルダで変更。
           雲量は uniform 駆動、タイプ・品質の切替は再コンパイルが走る） */}
       <CloudLayer
-        width={21.3}
-        depth={12.6}
+        width={footprint.width}
+        depth={footprint.depth}
         thickness={1.5}
         coverage={cloudCoverage}
         type={cloudType}
         steps={12}
         quality={cloudQuality}
-        position={[0, 5, 0]}
+        position={[0, region.cloudHeight, 0]}
       />
 
-      {/* HTML ラベル */}
-      <Labels3DLayer />
+      {/* HTML ラベル（地名は地域プリセット由来） */}
+      <Labels3DLayer labels={region.labels} />
 
     </>
   )

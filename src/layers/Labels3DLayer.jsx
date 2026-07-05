@@ -12,15 +12,14 @@ const LABEL_STYLE = {
   userSelect: 'none',
 }
 
-const LABELS = [
-  { id: 'iran', text: 'イラン', position: [0.5, 2, 4] },
-  { id: 'hormuz', text: 'ホルムズ海峡', position: [-1, 1, 0] },
-]
+// inline 配列の既定値による毎レンダー再生成を避けるためのモジュール定数
+const DEFAULT_LABELS = []
 
-function Labels3DLayer() {
+// labels: [{ id, text, position }] を regions.js の region.labels から渡す
+function Labels3DLayer({ labels = DEFAULT_LABELS }) {
   return (
     <>
-      {LABELS.map(({ id, text, position }) => (
+      {labels.map(({ id, text, position }) => (
         <Html key={id} position={position} center distanceFactor={16}>
           <div style={LABEL_STYLE}>{text}</div>
         </Html>
