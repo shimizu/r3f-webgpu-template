@@ -19,6 +19,7 @@ import { HORMUZ_VIEW } from './gis/views'
 import GeojsonLayer from './layers/GeojsonLayer'
 // eslint-disable-next-line no-unused-vars
 import MovingEntitiesLayer from './layers/MovingEntitiesLayer'
+import RainLayer from './layers/RainLayer'
 import TerrainLayer from './layers/TerrainLayer'
 import CloudLayer from './layers/CloudLayer'
 import Labels3DLayer from './layers/Labels3DLayer'
@@ -60,8 +61,9 @@ function Scene({ entityCount = 2000 }) {
     // リスクがあるため既定オフ（steps≈12 の雲と併用時は特に注意）
     postfx: { value: false, label: 'ポストFX' },
   })
-  const { wetness, cloudType, cloudCoverage, cloudQuality } = useControls('天候', {
-    wetness: { value: 0, min: 0, max: 1, step: 0.01, label: '地面の濡れ' },
+  const { rain, wetness, cloudType, cloudCoverage, cloudQuality } = useControls('天候', {
+    rain: { value: false, label: '雨' },
+    wetness: { value: 0, min: 0, max: 1, step: 0.01, label: '地面の濡れ（手動）' },
     cloudType: {
       value: 'stratus',
       options: { '層雲': 'stratus', '積雲': 'cumulus', '巻雲': 'cirrus' },
@@ -119,10 +121,23 @@ function Scene({ entityCount = 2000 }) {
           baseHeight={1.5}
           seaLevel={SEA_LEVEL}
           onHeightData={setHeightInfo}
-          wetness={wetness}
+          wetness={Math.max(wetness, rain ? 0.85 : 0)}
         />
       </Coordinate>
 
+
+      {/* 降雨: 地形フットプリントに合わせて散布し、heightInfo で地形衝突。
+          雨トグルで TerrainLayer の濡れ目標も駆動される（時定数追従は Terrain 側） */}
+      {rain && heightInfo && (
+        <RainLayer
+          position={[0, 0.5, 0]}
+          width={heightInfo.terrainWidth}
+          depth={heightInfo.terrainDepth}
+          topY={6}
+          particleCount={15000}
+          heightInfo={heightInfo}
+        />
+      )}
 
       {/* 海面レイヤー（投影後の地形フットプリント 21.38 × 12.68 に合わせる） */}
       {showOcean && (
