@@ -148,5 +148,6 @@ WebGPU ネイティブの後処理パイプライン:
 - `docs/projection-formulas.md` — 投影図法の数式リファレンス（projectionCPU/GPU の実装根拠）
 - `AGENTS.md` — リポジトリガイドライン（コミット規約、PR要件等）
 - `GEMINI.md` — プロジェクトコンセプトと技術スタックの概観
+- `manual/` — 各レイヤーの使用マニュアル（1 レイヤー 1 ファイル。props・前提・使用例・調整ポイント）。`manual/README.md` が索引
 - `plan.md` — 災害ジオラマ可視化基盤への育成ロードマップ（リファクタリング + 災害別アプローチ + 実装順序）
 - `refactoring.md` — リファクタリング候補の記録
