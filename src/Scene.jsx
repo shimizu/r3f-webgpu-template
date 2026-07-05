@@ -34,6 +34,7 @@ import TerrainLayer from './layers/TerrainLayer'
 import CloudLayer from './layers/CloudLayer'
 import Labels3DLayer from './layers/Labels3DLayer'
 import GrassLayer from './layers/GrassLayer'
+import TreeLayer from './layers/TreeLayer'
 
 /**
  * シーン全体の構成を定義するコンポーネント。
@@ -71,6 +72,15 @@ function SceneContent({ entityCount = 2000 }) {
   const { showGrass, grassPlacement } = useControls('草', {
     showGrass: { value: false, label: '表示' },
     grassPlacement: {
+      value: 'terrain',
+      options: { '地形(DEM)': 'terrain', 'ステージ床': 'floor' },
+      label: '配置',
+    },
+  })
+  // 「木」フォルダも同じマージ方式（TreeLayer 内の詳細パラメータと合流）
+  const { showTrees, treePlacement } = useControls('木', {
+    showTrees: { value: false, label: '表示' },
+    treePlacement: {
       value: 'terrain',
       options: { '地形(DEM)': 'terrain', 'ステージ床': 'floor' },
       label: '配置',
@@ -214,6 +224,18 @@ function SceneContent({ entityCount = 2000 }) {
           terrain
           seaLevel={region.seaLevel}
           bladeScale={0.4}
+          position={[0, 0.5, 0]}
+        />
+      )}
+
+      {/* GPU インスタンス樹木（1 ドローコール。針葉樹 + 広葉樹の混在）。
+          草と同じく leva「木」フォルダの表示トグル + 配置切替 */}
+      {showTrees && treePlacement === 'floor' && <TreeLayer area={40} position={[0, -1, 0]} />}
+      {showTrees && treePlacement === 'terrain' && heightInfo && (
+        <TreeLayer
+          terrain
+          seaLevel={region.seaLevel}
+          treeScale={0.35}
           position={[0, 0.5, 0]}
         />
       )}
