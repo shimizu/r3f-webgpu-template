@@ -550,6 +550,12 @@ SceneEffects 自体が GPU 予算で無効化中のため、復帰させると�
 ただし scenePass 構成の変更が必要で工事が大きく、現行の steps≈12・1 層構成で
 予算内に収まっているため**保留**。将来 steps を上げたくなったときの第一候補。
 
+**追記（実装済み）**: 参照側の「安いノイズ（hash ベース value noise）」は
+`quality` prop として CloudLayer に導入した。`'low'`（既定）= `src/tsl/valueNoise.js`
+の valueFbm3 で weather / shape / detail を評価（サンプル単価 数分の一、
+カリフラワー構造は失われる）。`'high'` = 従来の mx_fractal + mx_worley。
+leva「天候 > 雲の品質」で切替（切替時は再コンパイルが走る）。
+
 ### その他
 
 - **postfx.js の EffectComposer 構成**（UnrealBloomPass / BokehPass / MSAA RT）:

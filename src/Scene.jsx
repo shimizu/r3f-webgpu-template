@@ -58,8 +58,13 @@ function Scene({ entityCount = 2000 }) {
       label: '草の配置',
     },
   })
-  const { wetness } = useControls('天候', {
+  const { wetness, cloudQuality } = useControls('天候', {
     wetness: { value: 0, min: 0, max: 1, step: 0.01, label: '地面の濡れ' },
+    cloudQuality: {
+      value: 'low',
+      options: { '軽量': 'low', '高品質': 'high' },
+      label: '雲の品質',
+    },
   })
   
   return (
@@ -141,6 +146,7 @@ function Scene({ entityCount = 2000 }) {
         coverage={0.65}
         type='stratus'
         steps={12}
+        quality={cloudQuality}
         position={[0, 5, 0]}
       />
 
