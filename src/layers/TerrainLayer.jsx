@@ -412,6 +412,10 @@ function buildTerrainGeometry(demData, { terrainWidth, targetHeight, smooth, hei
       rows,
       terrainWidth: maxX - minX,
       terrainDepth: maxZ - minZ,
+      // 正規化標高 0..1 ↔ ローカル Y の変換係数（localY = minY + norm * rangeY）。
+      // seaLevel（正規化値）を高さバッファと突き合わせる消費者（草の海面マスク等）が使う
+      minY: minElev * elevToWorld,
+      rangeY: elevRange * elevToWorld,
     },
   }
 }

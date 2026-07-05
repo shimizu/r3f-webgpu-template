@@ -44,12 +44,19 @@ const ENTITY_REGION = {
  * 2. GIS コンテキスト（Coordinate）を構築し、地理座標系を 3D 空間に投影。
  * 3. 投影された空間内に地図（GeoJSON）や移動体（MovingEntities）を描画。
  */
+// TerrainLayer と GrassLayer（海面マスク）で共有する正規化海面標高
+const SEA_LEVEL = 0.19
+
 // eslint-disable-next-line no-unused-vars
 function Scene({ entityCount = 2000 }) {
-  // eslint-disable-next-line no-unused-vars
   const [heightInfo, setHeightInfo] = useState(null)
-  const { showOcean } = useControls({
+  const { showOcean, grassPlacement } = useControls({
     showOcean: { value: true, label: '海面を表示' },
+    grassPlacement: {
+      value: 'terrain',
+      options: { '地形(DEM)': 'terrain', 'ステージ床': 'floor', 'なし': 'none' },
+      label: '草の配置',
+    },
   })
   
   return (
@@ -74,8 +81,17 @@ function Scene({ entityCount = 2000 }) {
       {/* 青いグリッドレイヤー */}
       <GridLayer position={[0, -1, 0]} />
 
-      {/* GPU インスタンス草（ステージ床の上、手続き起伏付き。1 ドローコール） */}
-      <GrassLayer area={40} position={[0, -1, 0]} />
+      {/* GPU インスタンス草（1 ドローコール）。leva で 地形(DEM) / ステージ床 を切替。
+          DEM 版は TerrainLayer の onHeightData（heightInfo）を待ってからマウントする */}
+      {grassPlacement === 'floor' && <GrassLayer area={40} position={[0, -1, 0]} />}
+      {grassPlacement === 'terrain' && heightInfo && (
+        <GrassLayer
+          heightInfo={heightInfo}
+          seaLevel={SEA_LEVEL}
+          bladeScale={0.4}
+          position={[0, 0.5, 0]}
+        />
+      )}
 
       {/* GIS: DEM 地形 + GeoJSON を同一投影コンテキストで自動整合 */}
       <Coordinate projection="equirectangular" view={HORMUZ_VIEW} position={[0, 0.5, 0]}>
@@ -84,7 +100,8 @@ function Scene({ entityCount = 2000 }) {
           smooth={1.25}
           heightScale={0.5}
           baseHeight={1.5}
-          seaLevel={0.19}
+          seaLevel={SEA_LEVEL}
+          onHeightData={setHeightInfo}
         />
       </Coordinate>
 
