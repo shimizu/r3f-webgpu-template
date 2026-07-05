@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useFrame } from '@react-three/fiber'
 import { BufferGeometry, Float32BufferAttribute, SRGBColorSpace, TextureLoader, Uint32BufferAttribute, Vector2 } from 'three'
 import { MeshPhysicalNodeMaterial } from 'three/webgpu'
 import {
@@ -449,10 +450,12 @@ function TerrainLayer({
   seaLevel = 0,
   position = [0, 0, 0],
   onHeightData,
-  wetness = 0, // 濡れカバレッジ 0..1（0 = 乾燥、1 = 全面濡れ）
+  wetness = 0, // 濡れカバレッジの目標値 0..1（0 = 乾燥、1 = 全面濡れ）
   wetDarken = 0.55, // 濡れ部の albedo 減衰率
   wetRoughness = 0.35, // 濡れ部の roughness（艶）
   wetScale = 0.35, // 濡れパッチの空間周波数
+  wetRiseTime = 1.5, // 濡れの立ち上がり時定数（秒。降り始めは速め）
+  wetFallTime = 8, // 乾きの時定数（秒。止んだ後はゆっくり乾く）
 }) {
   const [demData, setDemData] = useState(null)
   const [texMap, setTexMap] = useState(null)
@@ -471,12 +474,27 @@ function TerrainLayer({
     []
   )
 
+  // darken/rough/scale は見た目パラメータなので即時反映
   useEffect(() => {
-    wetUniforms.coverage.value = wetness
     wetUniforms.darken.value = wetDarken
     wetUniforms.rough.value = wetRoughness
     wetUniforms.scale.value = wetScale
-  }, [wetUniforms, wetness, wetDarken, wetRoughness, wetScale])
+  }, [wetUniforms, wetDarken, wetRoughness, wetScale])
+
+  // coverage（濡れ量）は wetness を目標に非対称の時定数で追従させる。
+  // 降雨 ON/OFF に対して「降り始めは速く濡れ、止んだ後はゆっくり乾く」挙動になる。
+  // 毎フレーム uniform の .value を更新するだけなので React 再レンダーは起こさない
+  const wetTargetRef = useRef(wetness)
+  wetTargetRef.current = wetness
+  useFrame((_, delta) => {
+    const dt = Math.min(delta || 1 / 60, 0.1) // タブ復帰後の巨大 dt をクランプ
+    const cur = wetUniforms.coverage.value
+    const target = wetTargetRef.current
+    if (Math.abs(target - cur) < 1e-4) return
+    const tau = target > cur ? wetRiseTime : wetFallTime
+    const k = 1 - Math.exp(-dt / Math.max(tau, 1e-3)) // フレームレート非依存
+    wetUniforms.coverage.value = cur + (target - cur) * k
+  })
 
   // <Coordinate> 配下なら投影モード（bbox + view から位置・スケールを自動決定）
   const proj = useProjectionMaybe()

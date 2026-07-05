@@ -328,13 +328,18 @@ material.roughnessNode = mix(baseRoughness, uWetRoughness, wet)
 - [ ] 濡れた領域がパッチ状（全面一様でない）
 - [ ] RainLayer の ON/OFF（または降雨強度）に追従する
 
-### 後続タスク（未実装）
+### RainLayer 連動（実装済み）
 
-RainLayer 連動は RainLayer 自体が Scene 未マウントのため保留中。
-実装する場合は「降雨強度 0..1 の共有 uniform（または Scene の state）」を新設し、
-RainLayer のパーティクル量と TerrainLayer の wetness prop の両方に接続する。
-降り始め・止んだ後の乾きをつけるなら wetness を時定数付きで追従させる
-（useFrame で `wet += (target - wet) * dt / tau`、乾き側の tau を長めに）。
+leva「天候 > 雨」トグルで RainLayer（15k パーティクル・地形衝突あり）を
+地形フットプリントにマウントし、同時に TerrainLayer の濡れ目標を 0.85 に上げる。
+濡れ量は TerrainLayer 内の useFrame で非対称の時定数追従（wetRiseTime 1.5s /
+wetFallTime 8s）にしたので、降り始めは速く濡れ・止んだ後はゆっくり乾く。
+手動スライダー（地面の濡れ）とは max で合成するので両方が生きる。
+
+未実装（任意の発展）: 降雨"強度"の連続可変（小雨〜土砂降り）。
+現状は on/off のみ。強度可変にするには RainLayer/runRainCompute に強度 uniform
+（パーティクル不透明度 or 有効割合）を新設する必要がある（particleCount 直接変更は
+GPU リソース全再生成なので不可）。
 
 ---
 
