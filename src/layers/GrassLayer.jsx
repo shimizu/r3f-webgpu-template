@@ -24,6 +24,8 @@ import {
 import { coverageMask } from '../tsl/coverageMask'
 import { createGroundField } from './groundField'
 import { useHeightField } from '../gis/HeightFieldContext'
+import { useLandCover } from '../gis/LandCoverContext'
+import { GRASS_CLASSES } from '../gis/landcover'
 
 /**
  * GPU インスタンス草レイヤー（task.md T1）
@@ -123,6 +125,11 @@ export default function GrassLayer({
   const heightInfo = terrain ? ctxHeightInfo : null
   const sampler = terrain ? gpu?.sampler ?? null : null
 
+  // 土地被覆（LandCoverContext）。DEM モードでデータがあれば草地系クラス
+  // （grass/crops/shrub）にのみ散布する。無ければ従来の無条件散布のまま
+  const { status: lcStatus, classAtWorld } = useLandCover()
+  const lcAccept = terrain ? classAtWorld : null
+
   const { geometry, material, uniforms } = useMemo(() => {
     // 散布域: DEM モードでは地形フットプリントに合わせる（X と Z が異なる）
     const areaX = heightInfo ? heightInfo.terrainWidth : area
@@ -148,9 +155,26 @@ export default function GrassLayer({
     const iVarArr = new Float32Array(maxCount * 4) // yaw, 高さ個体差, 幅個体差, 風位相
     const iMiscArr = new Float32Array(maxCount * 2) // カール個体差, 色個体差
     const rand = mulberry32(1337)
+    // 土地被覆 rejection: 草地系クラス以外を引いたら座標を引き直す（TreeLayer と
+    // 同イディオム。3 箇所目=建物配置が生えたら共通化する。refactoring.md 参照）。
+    // 草地系は面積 ~5.6% しかないため、GPU マスク方式だと 94% のインスタンスが
+    // scale 0 の無駄死にになる。CPU で引き直せば全数が有効配置になり density
+    // スライダーの意味（≒見える本数）が保たれる。期待試行数 ~18 回/本、初期化 1 回のみ。
+    // lcAccept が null のときは rand() の消費列が従来と完全一致する（bit 同一の配置）
+    const MAX_TRIES = 200
     for (let i = 0; i < maxCount; i += 1) {
-      iPosArr[i * 2] = (rand() - 0.5) * areaX
-      iPosArr[i * 2 + 1] = (rand() - 0.5) * areaZ
+      let x = (rand() - 0.5) * areaX
+      let z = (rand() - 0.5) * areaZ
+      if (lcAccept) {
+        let tries = 1
+        while (!GRASS_CLASSES.includes(lcAccept(x, z)) && tries < MAX_TRIES) {
+          x = (rand() - 0.5) * areaX
+          z = (rand() - 0.5) * areaZ
+          tries += 1
+        }
+      }
+      iPosArr[i * 2] = x
+      iPosArr[i * 2 + 1] = z
       iVarArr[i * 4] = rand() * Math.PI * 2
       iVarArr[i * 4 + 1] = 0.7 + rand() * 0.6
       iVarArr[i * 4 + 2] = 0.8 + rand() * 0.5
@@ -302,7 +326,7 @@ export default function GrassLayer({
     geometry.instanceCount = Math.floor(maxCount * 0.15)
 
     return { geometry, material, uniforms }
-  }, [area, maxCount, heightInfo, sampler])
+  }, [area, maxCount, heightInfo, sampler, lcAccept])
 
   // 密度 = instanceCount の変更のみ（ジオメトリ再生成なし）
   useEffect(() => {
@@ -367,7 +391,8 @@ export default function GrassLayer({
   }, [geometry, material])
 
   // DEM モードで高さ場がまだ無い間は描画しない（hooks 実行後に判定）
-  if (terrain && (!heightInfo || !sampler)) return null
+  // 土地被覆のロード中も待つ（先に無条件散布 → 到着後に再散布、の二度手間を防ぐ）
+  if (terrain && (!heightInfo || !sampler || lcStatus === 'loading')) return null
 
   return (
     <mesh
