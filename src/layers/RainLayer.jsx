@@ -18,6 +18,7 @@ import {
 } from 'three/tsl'
 
 import { createRainComputeRunner } from '../compute/runRainCompute'
+import { useHeightField } from '../gis/HeightFieldContext'
 
 // ============================================================
 // 調整用パラメータ
@@ -45,8 +46,8 @@ const DEFAULT_DELTA = 1 / 60
 // useMemo が再実行される（GPU リソース全再生成）ため、モジュール定数にする
 const DEFAULT_WIND = [0.01, 0, 0.005]
 
-// wind: [x, y, z]。heightInfo は TerrainLayer の onHeightData から渡す想定で、
-// 毎レンダー新規オブジェクトを渡すと GPU リソースが再生成されるため安定参照で渡すこと
+// wind: [x, y, z]。地形衝突は HeightFieldContext の共有サンプラを使う
+// （heightInfo が未発行の間は y=0 平面への衝突になる）
 function RainLayer({
   position = [0, 0, 0],
   width = 15,
@@ -55,10 +56,11 @@ function RainLayer({
   particleCount = 30000,
   rainSpeed = 0.08,
   wind = DEFAULT_WIND,
-  heightInfo = null,
 }) {
   const renderer = useThree((state) => state.gl)
   const systemRef = useRef(null)
+  const { gpu } = useHeightField()
+  const heightSampler = gpu?.sampler ?? null
 
   // wind は成分値で依存させ、呼び出し側が inline 配列を渡しても再生成されないようにする
   const [windX, windY, windZ] = wind
@@ -71,11 +73,7 @@ function RainLayer({
       topY,
       rainSpeed,
       wind: [windX, windY, windZ],
-      heightData: heightInfo?.heights ?? null,
-      heightCols: heightInfo?.cols ?? 0,
-      heightRows: heightInfo?.rows ?? 0,
-      terrainWidth: heightInfo?.terrainWidth ?? 0,
-      terrainDepth: heightInfo?.terrainDepth ?? 0,
+      heightSampler,
     })
 
     // ======== 雨メッシュ ========
@@ -189,7 +187,7 @@ function RainLayer({
       splashGeometry, splashMaterial, splashMesh,
       system,
     }
-  }, [particleCount, width, depth, topY, rainSpeed, windX, windY, windZ, heightInfo])
+  }, [particleCount, width, depth, topY, rainSpeed, windX, windY, windZ, heightSampler])
 
   useEffect(() => {
     resources.system.init(renderer)
