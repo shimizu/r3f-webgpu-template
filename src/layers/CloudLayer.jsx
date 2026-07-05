@@ -306,7 +306,8 @@ function applyCoverageUniforms(cov, preset, coverage) {
   cov.upper.value = upper
 }
 
-function createCloudMaterial({ type, cov, steps, quality }) {
+// flash: 雲内発光の uniform ノード（0..1、雷フラッシュ用）。null なら無効
+function createCloudMaterial({ type, cov, steps, quality, flash = null }) {
   const preset = CLOUD_TYPES[type] ?? CLOUD_TYPES[CLOUD_DEFAULTS.type]
   const { sampleBase, sampleDensity } = createDensitySamplers(preset, cov, quality)
 
@@ -376,7 +377,12 @@ function createCloudMaterial({ type, cov, steps, quality }) {
           color(AMBIENT.zenith),
           clamp(pos.y.add(0.5), 0, 1)
         ).mul(preset.ambientStrength)
-        const radiance = sunRadiance.mul(lightT).mul(powder).mul(phase).add(ambient)
+        // 雷フラッシュ: 雲内部を一様に発光させる（LightningLayer と同じ
+        // エンベロープの uniform を Scene 経由で共有）
+        const emissive = flash
+          ? vec3(0.85, 0.9, 1.0).mul(flash).mul(1.2)
+          : vec3(0)
+        const radiance = sunRadiance.mul(lightT).mul(powder).mul(phase).add(ambient).add(emissive)
 
         const stepT = exp(d.mul(-preset.extinction).mul(stepWorld))
         accumC.addAssign(radiance.mul(accumT).mul(stepT.oneMinus()))
@@ -427,6 +433,7 @@ function CloudLayer({
   steps = CLOUD_DEFAULTS.steps,
   quality = CLOUD_DEFAULTS.quality,
   position = DEFAULT_POSITION,
+  flashNode = null, // 雷フラッシュ uniform（安定参照で渡すこと。再生成でシェーダ再構築が走る）
 }) {
   // coverage の remap 閾値は uniform 化（生成一度きり、値更新のみ）
   const cov = useMemo(
@@ -440,8 +447,8 @@ function CloudLayer({
 
   // 位置・寸法は modelWorldMatrix が吸収するので material 依存はシェーダ定数のみ
   const material = useMemo(
-    () => createCloudMaterial({ type, cov, steps, quality }),
-    [type, cov, steps, quality]
+    () => createCloudMaterial({ type, cov, steps, quality, flash: flashNode }),
+    [type, cov, steps, quality, flashNode]
   )
 
   useEffect(() => () => material.dispose(), [material])

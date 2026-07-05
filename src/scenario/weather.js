@@ -21,6 +21,7 @@ export const DEFAULT_WEATHER = {
   wetness: 0, // 手動の地面の濡れ 0..1
   cloudCoverage: 0.65, // 雲量 0..1
   cloudType: 'stratus', // 雲タイプ（変更は再コンパイルを伴う）
+  lightningRate: 0, // 落雷頻度（回/分。0 = 雷なし）
 }
 
 // weather → 各レイヤーの入力値。連動ルールはここだけに書く
@@ -53,5 +54,8 @@ export function deriveLayerInputs(weather) {
     // 雲（明示値のみ）
     cloudCoverage: w.cloudCoverage,
     cloudType: w.cloudType,
+
+    // 雷（ポアソン発火のレートとして LightningLayer が消費）
+    lightningRate: w.lightningRate,
   }
 }
