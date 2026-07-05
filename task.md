@@ -21,7 +21,7 @@ referencejs を参照する必要はない。**
 | T4 | 共有ハイトフィールドパターン | 中（T1 の前提） | 実装済み（手続き版 `groundField.js` + DEM 版は GrassLayer 内の storage バイリニア補間） |
 | T5 | Worley クラック（乾裂した大地） | 低 | 未着手 |
 | T6 | モデルへの苔・風化堆積 | 低 | 未着手 |
-| T7 | フィルムグレードパス | 低（SceneEffects 復帰時） | 未着手 |
+| T7 | フィルムグレードパス | 低（SceneEffects 復帰時） | 実装済み（確認待ち）※leva「ポストFX」トグルで SceneEffects ごと有効化 |
 | — | 体積雲の改善 | **対応不要**（既存 CloudLayer が同等以上） | — |
 
 ---
