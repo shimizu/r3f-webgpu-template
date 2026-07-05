@@ -29,6 +29,7 @@ import HeightFogLayer from './layers/HeightFogLayer'
 import LightningLayer from './layers/LightningLayer'
 import TornadoLayer from './layers/TornadoLayer'
 import FireLayer from './layers/FireLayer'
+import SmokeLayer from './layers/SmokeLayer'
 import TerrainLayer from './layers/TerrainLayer'
 import CloudLayer from './layers/CloudLayer'
 import Labels3DLayer from './layers/Labels3DLayer'
@@ -294,6 +295,19 @@ function SceneContent({ entityCount = 2000 }) {
       {inputs.fireActive && heightInfo && fireIgnition && (
         <FireLayer
           position={[0, 0.5, 0]}
+          ignition={fireIgnition}
+          radius={fireRadius}
+        />
+      )}
+
+      {/* 山火事の煙: 延焼マスクの XZ ゲート付き smoke プリセット雲。
+          山火事中は通常雲の coverage が自動で絞られる（deriveLayerInputs） */}
+      {inputs.fireActive && heightInfo && fireIgnition && (
+        <SmokeLayer
+          position={[0, 2.2, 0]}
+          width={footprint.width}
+          depth={footprint.depth}
+          thickness={3}
           ignition={fireIgnition}
           radius={fireRadius}
         />

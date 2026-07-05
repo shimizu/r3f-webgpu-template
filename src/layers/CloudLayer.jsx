@@ -137,6 +137,32 @@ const CLOUD_TYPES = {
     lightSteps: 3,
     lightStepWorld: 0.3,
   },
+  // 山火事の煙（plan.md D5-5c）。暗色・吸収強・等方散乱寄り。
+  // gateAt（延焼マスクの XZ ゲート）と併用し、燃焼域からだけ立ち上らせる
+  smoke: {
+    weatherScale: [0.5, 0.5],
+    weatherOctaves: 3,
+    coverageSoftness: 0.5,
+    coverageBias: 0.15,
+    profile: { b0: 0, b1: 0.06, t0: 0.35, t1: 1.0 }, // 地面付近から立ち上がり上空で散る
+    towerByWeather: 0.6,
+    shapeScale: [0.7, 0.5, 0.7],
+    shapeAmount: 0.45,
+    detailScale: 2.2,
+    detailAmount: 0.35,
+    detailStyle: 'wispy',
+    extinction: 2.2,
+    phaseG: 0.15,        // ほぼ等方（すすの散乱）
+    sunEnergy: 0.6,      // 暗い（吸収が強い）
+    ambientStrength: 0.25,
+    powderScale: 1.5,
+    windWeather: [0.02, 0.01],
+    windShape: [0.03, 0.015],
+    windDetail: [0.06, -0.03],
+    shear: 0.3,          // 上空ほど風下へ流れる
+    lightSteps: 3,
+    lightStepWorld: 0.3,
+  },
   cirrus: {
     weatherScale: [0.06, 0.35],
     weatherOctaves: 3,
@@ -193,7 +219,9 @@ const DEFAULT_POSITION = [0, 6, 0]
 // cov = { threshold, upper } の uniform ノード。coverage は「remap の閾値シフト」として
 // 効かせる（最終密度への乗算ではない）設計で、値の計算はコンポーネント側
 // （applyCoverageUniforms）が行い、スライダー操作では再コンパイルが走らない
-function createDensitySamplers(preset, cov, quality) {
+// gateAt: worldXZ(vec2) → 0..1 の密度ゲート Fn（省略可）。
+// 山火事の煙が延焼マスク（burnField）の範囲からだけ立ち上る等に使う
+function createDensitySamplers(preset, cov, quality, gateAt = null) {
   // 品質モード別のノイズ選択。パイプライン（remap・プロファイル・侵食の組織化）は
   // 共通で、fBm と detail のノイズ実装だけを差し替える
   const cheap = quality !== 'high'
@@ -238,6 +266,11 @@ function createDensitySamplers(preset, cov, quality) {
       profile = profile.mul(smoothstep(hTop.mul(0.6), hTop, h).oneMinus())
     }
 
+    // --- 4) XZ ゲート（延焼マスク等。ない場合は素通し） ---
+    if (gateAt) {
+      const gate = gateAt(vec2(worldP.x, worldP.z))
+      return base.mul(profile).mul(edge).mul(gate)
+    }
     return base.mul(profile).mul(edge)
   })
 
@@ -307,9 +340,10 @@ function applyCoverageUniforms(cov, preset, coverage) {
 }
 
 // flash: 雲内発光の uniform ノード（0..1、雷フラッシュ用）。null なら無効
-function createCloudMaterial({ type, cov, steps, quality, flash = null }) {
+// gateAt: worldXZ → 0..1 の密度ゲート Fn。null なら素通し
+function createCloudMaterial({ type, cov, steps, quality, flash = null, gateAt = null }) {
   const preset = CLOUD_TYPES[type] ?? CLOUD_TYPES[CLOUD_DEFAULTS.type]
-  const { sampleBase, sampleDensity } = createDensitySamplers(preset, cov, quality)
+  const { sampleBase, sampleDensity } = createDensitySamplers(preset, cov, quality, gateAt)
 
   const material = new MeshBasicNodeMaterial({
     transparent: true,
@@ -434,6 +468,7 @@ function CloudLayer({
   quality = CLOUD_DEFAULTS.quality,
   position = DEFAULT_POSITION,
   flashNode = null, // 雷フラッシュ uniform（安定参照で渡すこと。再生成でシェーダ再構築が走る）
+  gateAt = null, // worldXZ → 0..1 の密度ゲート Fn（安定参照で渡すこと）
 }) {
   // coverage の remap 閾値は uniform 化（生成一度きり、値更新のみ）
   const cov = useMemo(
@@ -447,8 +482,8 @@ function CloudLayer({
 
   // 位置・寸法は modelWorldMatrix が吸収するので material 依存はシェーダ定数のみ
   const material = useMemo(
-    () => createCloudMaterial({ type, cov, steps, quality, flash: flashNode }),
-    [type, cov, steps, quality, flashNode]
+    () => createCloudMaterial({ type, cov, steps, quality, flash: flashNode, gateAt }),
+    [type, cov, steps, quality, flashNode, gateAt]
   )
 
   useEffect(() => () => material.dispose(), [material])

@@ -42,6 +42,20 @@ export const SCENARIOS = {
     ],
   },
 
+  wildfire: {
+    id: 'wildfire',
+    label: '山火事',
+    duration: 150,
+    cloudType: 'cirrus',
+    keyframes: [
+      { t: 0.0, w: { fireProgress: 0, fogDensity: 0, cloudCoverage: 0.4 } },
+      { t: 0.12, w: { fireProgress: 0.06, fogDensity: 0.03, cloudCoverage: 0.4 } },
+      { t: 0.55, w: { fireProgress: 0.55, fogDensity: 0.1, cloudCoverage: 0.35 } },
+      // 焼け跡は戻らないので fireProgress は単調増加で終える
+      { t: 1.0, w: { fireProgress: 1.0, fogDensity: 0.14, cloudCoverage: 0.3 } },
+    ],
+  },
+
   blizzard: {
     id: 'blizzard',
     label: '吹雪',

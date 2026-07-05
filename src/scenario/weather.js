@@ -53,8 +53,9 @@ export function deriveLayerInputs(weather) {
       w.floodLevel > 0.02 ? 0.9 : 0
     ),
 
-    // 雲（明示値のみ）
-    cloudCoverage: w.cloudCoverage,
+    // 雲（明示値のみ）。ただし山火事中は煙 raymarch と GPU 予算を折半する
+    // ため、延焼進行に応じて通常雲を絞る（plan.md D5-5c の予算ルール）
+    cloudCoverage: w.cloudCoverage * (1 - 0.6 * w.fireProgress),
     cloudType: w.cloudType,
 
     // 雷（ポアソン発火のレートとして LightningLayer が消費）
