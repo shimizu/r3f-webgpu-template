@@ -83,7 +83,7 @@ function SceneContent({ entityCount = 2000 }) {
     rain: { value: false, label: '雨' },
     rainIntensity: { value: 0.6, min: 0, max: 1, step: 0.01, label: '雨量' },
     snow: { value: false, label: '雪' },
-    fogAmount: { value: 0, min: 0, max: 1, step: 0.01, label: '霧（手動）' },
+    fogAmount: { value: 0, min: 0, max: 1, step: 0.01, label: '霧' },
     floodLevel: { value: 0, min: 0, max: 0.6, step: 0.005, label: '浸水（水位上昇）' },
     wetness: { value: 0, min: 0, max: 1, step: 0.01, label: '地面の濡れ（手動）' },
     cloudType: {
@@ -134,11 +134,9 @@ function SceneContent({ entityCount = 2000 }) {
 
       {/* 高さフォグ（scene.fogNode）。マウントしっぱなしで density を uniform 駆動
           （条件マウントにすると全マテリアル再コンパイルが走る）。
-          雨天時は雨量に応じて視程が自動で下がる */}
-      <HeightFogLayer
-        density={Math.max(fogAmount, rain ? rainIntensity * 0.2 : 0)}
-        baseY={0.5}
-      />
+          スライダー 0 で完全無効。雨との自動連動はしない（シナリオ導入時に
+          weather 派生で駆動する予定） */}
+      <HeightFogLayer density={fogAmount} baseY={0.5} />
 
       {/* 地図閲覧に適したカメラ操作（左ドラッグで移動、右ドラッグで回転） */}
       <MapControls
