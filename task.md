@@ -20,7 +20,7 @@ referencejs を参照する必要はない。**
 | T3 | カバレッジマスク共通イディオム | 中（T1/T2 内で導入） | 実装済み（`src/tsl/coverageMask.js`） |
 | T4 | 共有ハイトフィールドパターン | 中（T1 の前提） | 実装済み（手続き版 `groundField.js` + DEM 版は GrassLayer 内の storage バイリニア補間） |
 | T5 | Worley クラック（乾裂した大地） | 低 | 未着手 |
-| T6 | モデルへの苔・風化堆積 | 低 | 未着手 |
+| T6 | モデルへの苔・風化堆積 → 地形への雪/苔堆積に読み替え | 低 | 実装済み（確認待ち）※TerrainLayer に法線+標高の堆積。GLB 版は将来課題 |
 | T7 | フィルムグレードパス | 低（SceneEffects 復帰時） | 実装済み（確認待ち）※leva「ポストFX」トグルで SceneEffects ごと有効化 |
 | — | 体積雲の改善 | **対応不要**（既存 CloudLayer が同等以上） | — |
 
@@ -507,6 +507,15 @@ accum = top × coverageMask(modelXZ)             // T3 のマスク（モデル�
 TSL では `objectWorldMatrix` の逆行列 uniform を CPU で渡すか、
 `positionLocal` を直接使えばモデル固定はさらに簡単。展示物（GLB）の
 風化 lookdev として面白いが、現状ユースケースがないので保留。
+
+### 地形への読み替え（実装済み）
+
+GLB の対象が現 Scene に無いため、堆積の発想を **TerrainLayer** に読み替えて実装:
+`法線の上向き度（settle）× 標高（雪線 snowLine）× 北斜面（-Z 向きで実効雪線を下げる aspect）
+× coverageMask パッチ` で積もり量を決め、albedo を堆積色へ・roughness を雪側へ・
+法線を上方向へ寄せる。既定は雪（白）、色を緑にすれば苔。leva「堆積 (雪/苔)」で
+量 / 堆積下限標高 / 北斜面の効き / 色 / ラフネスを調整。既定 OFF（量 0）。
+GLB 置物への本来の T6 は将来課題として残す。
 
 ---
 

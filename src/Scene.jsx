@@ -76,6 +76,16 @@ function Scene({ entityCount = 2000 }) {
       label: '雲の品質',
     },
   })
+  const { snowAmount, snowLine, snowAspect, snowColor, snowRoughness } = useControls(
+    '堆積 (雪/苔)',
+    {
+      snowAmount: { value: 0, min: 0, max: 1, step: 0.01, label: '量' },
+      snowLine: { value: 0.55, min: 0, max: 1, step: 0.01, label: '堆積下限標高' },
+      snowAspect: { value: 0.15, min: 0, max: 0.5, step: 0.01, label: '北斜面の効き' },
+      snowColor: { value: '#eef4ff', label: '色（白=雪/緑=苔）' },
+      snowRoughness: { value: 0.9, min: 0, max: 1, step: 0.01, label: 'ラフネス' },
+    }
+  )
   
   return (
     <>
@@ -122,6 +132,11 @@ function Scene({ entityCount = 2000 }) {
           seaLevel={SEA_LEVEL}
           onHeightData={setHeightInfo}
           wetness={Math.max(wetness, rain ? 0.85 : 0)}
+          snowAmount={snowAmount}
+          snowLine={snowLine}
+          snowAspect={snowAspect}
+          snowColor={snowColor}
+          snowRoughness={snowRoughness}
         />
       </Coordinate>
 
