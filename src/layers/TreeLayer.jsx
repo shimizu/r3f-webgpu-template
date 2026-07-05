@@ -153,23 +153,29 @@ function buildTreeGeometry() {
   const normalA = normalFor(posA)
   const normalB = normalFor(posB)
 
-  // 正規化高さ（風の揺れの重み）と幹フラグ（色分け）。両樹種で共通に使えるよう
-  // 針葉樹側の y を採用する（樹種間の y 差は小さい）
+  // WebGPU の頂点バッファ上限（8 本）に収めるため、補助スカラーは vec4 の
+  // w 成分にパックする:
+  //   aPosB.w    = 正規化高さ aH（風の揺れの重み。針葉樹側の y を採用）
+  //   aNormalB.w = 幹フラグ aTrunk（色分け）
   const vertexCount = posA.length / 3
-  const aH = new Float32Array(vertexCount)
-  const aTrunk = new Float32Array(vertexCount)
+  const posB4 = new Float32Array(vertexCount * 4)
+  const normalB4 = new Float32Array(vertexCount * 4)
   for (let i = 0; i < vertexCount; i++) {
-    aH[i] = posA[i * 3 + 1]
-    aTrunk[i] = i < trunkRow * 2 ? 1 : 0
+    posB4[i * 4] = posB[i * 3]
+    posB4[i * 4 + 1] = posB[i * 3 + 1]
+    posB4[i * 4 + 2] = posB[i * 3 + 2]
+    posB4[i * 4 + 3] = posA[i * 3 + 1] // aH
+    normalB4[i * 4] = normalB[i * 3]
+    normalB4[i * 4 + 1] = normalB[i * 3 + 1]
+    normalB4[i * 4 + 2] = normalB[i * 3 + 2]
+    normalB4[i * 4 + 3] = i < trunkRow * 2 ? 1 : 0 // aTrunk
   }
 
   const geometry = new THREE.InstancedBufferGeometry()
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(posA, 3))
   geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normalA, 3))
-  geometry.setAttribute('aPosB', new THREE.Float32BufferAttribute(posB, 3))
-  geometry.setAttribute('aNormalB', new THREE.Float32BufferAttribute(normalB, 3))
-  geometry.setAttribute('aH', new THREE.Float32BufferAttribute(aH, 1))
-  geometry.setAttribute('aTrunk', new THREE.Float32BufferAttribute(aTrunk, 1))
+  geometry.setAttribute('aPosB', new THREE.Float32BufferAttribute(posB4, 4))
+  geometry.setAttribute('aNormalB', new THREE.Float32BufferAttribute(normalB4, 4))
   geometry.setIndex(indices)
   return geometry
 }
@@ -309,10 +315,13 @@ export default function TreeLayer({
     const iVar = instancedBufferAttribute(iVarAttr)
     const iMisc = instancedBufferAttribute(iMiscAttr)
 
-    const aPosB = attribute('aPosB', 'vec3')
-    const aNormalB = attribute('aNormalB', 'vec3')
-    const aH = attribute('aH', 'float')
-    const aTrunk = attribute('aTrunk', 'float')
+    // vec4 パック属性（.w に補助スカラー。バッファ本数削減のため）
+    const aPosB4 = attribute('aPosB', 'vec4')
+    const aNormalB4 = attribute('aNormalB', 'vec4')
+    const aPosB = aPosB4.xyz
+    const aNormalB = aNormalB4.xyz
+    const aH = aPosB4.w
+    const aTrunk = aNormalB4.w
 
     // 接地高さ（マスク・樹種の標高判定にも使う。TSL がノードを共有するので二重計算はない）
     const groundY = heightAt(iPos)
