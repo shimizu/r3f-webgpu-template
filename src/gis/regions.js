@@ -70,6 +70,9 @@ export const REGIONS = {
     id: 'fuji',
     label: '富士山周辺',
     demUrl: './dem/japan.tif',
+    // Dynamic World 土地被覆（クラス 0..8、約 30m）。地形配色と草木の散布 rejection が使う。
+    // 持たない region は標高 stops 配色 + 無条件散布にフォールバック（LandCoverContext 参照）
+    landcoverUrl: './landcover/japan_landcover.tif',
     // japan.tif（EPSG:3857 → 4326 に再投影済み）の実 bbox。富士山・箱根・
     // 駿河湾東部をカバーする狭域 DEM（約 0.67° × 0.39°、90m グリッド）
     bbox: { lonMin: 138.528032, lonMax: 139.198915, latMin: 35.061038, latMax: 35.447558 },
