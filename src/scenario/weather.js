@@ -23,6 +23,7 @@ export const DEFAULT_WEATHER = {
   cloudType: 'stratus', // 雲タイプ（変更は再コンパイルを伴う）
   lightningRate: 0, // 落雷頻度（回/分。0 = 雷なし）
   tornadoStrength: 0, // 竜巻の強さ 0..1（0 = なし）
+  fireProgress: 0, // 山火事の延焼進行 0..1（0 = なし。半径への変換は Scene 側）
 }
 
 // weather → 各レイヤーの入力値。連動ルールはここだけに書く
@@ -62,5 +63,9 @@ export function deriveLayerInputs(weather) {
     // 竜巻（0.01 未満はマウントしない）
     tornadoActive: w.tornadoStrength > 0.01,
     tornadoStrength: w.tornadoStrength,
+
+    // 山火事（延焼進行。0 で無効）
+    fireActive: w.fireProgress > 0.001,
+    fireProgress: w.fireProgress,
   }
 }

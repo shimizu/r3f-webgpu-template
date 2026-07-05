@@ -81,6 +81,7 @@ function SceneContent({ entityCount = 2000 }) {
     fogAmount,
     lightningRate,
     tornadoStrength,
+    fireProgress,
     floodLevel,
     wetness,
     cloudType,
@@ -93,6 +94,7 @@ function SceneContent({ entityCount = 2000 }) {
     fogAmount: { value: 0, min: 0, max: 1, step: 0.01, label: '霧' },
     lightningRate: { value: 0, min: 0, max: 20, step: 0.5, label: '雷（回/分）' },
     tornadoStrength: { value: 0, min: 0, max: 1, step: 0.01, label: '竜巻' },
+    fireProgress: { value: 0, min: 0, max: 1, step: 0.005, label: '山火事（延焼）' },
     floodLevel: { value: 0, min: 0, max: 0.6, step: 0.005, label: '浸水（水位上昇）' },
     wetness: { value: 0, min: 0, max: 1, step: 0.01, label: '地面の濡れ（手動）' },
     cloudType: {
@@ -131,8 +133,33 @@ function SceneContent({ entityCount = 2000 }) {
     cloudType,
     lightningRate,
     tornadoStrength,
+    fireProgress,
   }
   const inputs = deriveLayerInputs(scenarioWeather ?? manualWeather)
+
+  // 山火事の発火点: 地形内側（端 12% を除く）の最高標高セルを決定的に選ぶ
+  // （尾根から燃え広がる見た目になり、リロードでも再現される）
+  const fireIgnition = useMemo(() => {
+    if (!heightInfo) return null
+    const { heights, cols, rows, terrainWidth, terrainDepth } = heightInfo
+    const margin = 0.12
+    let best = { v: -Infinity, c: 0, r: 0 }
+    for (let r = Math.floor(rows * margin); r < rows * (1 - margin); r += 3) {
+      for (let c = Math.floor(cols * margin); c < cols * (1 - margin); c += 3) {
+        const v = heights[r * cols + c]
+        if (v > best.v) best = { v, c, r }
+      }
+    }
+    return [
+      (best.c / (cols - 1)) * terrainWidth - terrainWidth / 2,
+      (best.r / (rows - 1)) * terrainDepth - terrainDepth / 2,
+    ]
+  }, [heightInfo])
+  // 延焼半径: 進行 0..1 → 地形対角の 4 割まで
+  const fireRadius = heightInfo
+    ? inputs.fireProgress *
+      Math.hypot(heightInfo.terrainWidth, heightInfo.terrainDepth) * 0.4
+    : 0
 
   // 雷フラッシュ uniform: LightningLayer が書き、CloudLayer（雲内発光）が読む。
   // 安定参照必須（CloudLayer のシェーダ再構築を避ける）
@@ -203,6 +230,8 @@ function SceneContent({ entityCount = 2000 }) {
           wetness={inputs.wetnessTarget}
           snowAmount={snowAmount}
           snowing={inputs.snowing}
+          fireIgnition={fireIgnition}
+          fireRadius={fireRadius}
           snowLine={snowLine}
           snowAspect={snowAspect}
           snowColor={snowColor}
