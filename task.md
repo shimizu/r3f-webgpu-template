@@ -16,7 +16,7 @@ referencejs を参照する必要はない。**
 | ID | タスク | 優先度 | 状態 |
 |----|--------|--------|------|
 | T1 | GrassLayer — GPU インスタンス草レイヤー | 高 | 実装済み（確認待ち）※床版 + DEM 接地版（leva で切替） |
-| T2 | 地形の濡れ表現（RainLayer 連動） | 中 | 未着手 |
+| T2 | 地形の濡れ表現 | 中 | 実装済み（確認待ち）※leva「天候 > 地面の濡れ」駆動。RainLayer 連動は後続タスク |
 | T3 | カバレッジマスク共通イディオム | 中（T1/T2 内で導入） | 実装済み（`src/tsl/coverageMask.js`） |
 | T4 | 共有ハイトフィールドパターン | 中（T1 の前提） | 実装済み（手続き版 `groundField.js` + DEM 版は GrassLayer 内の storage バイリニア補間） |
 | T5 | Worley クラック（乾裂した大地） | 低 | 未着手 |
@@ -327,6 +327,14 @@ material.roughnessNode = mix(baseRoughness, uWetRoughness, wet)
 - [ ] wetness 0→1 で乾いた土 → 濡れた土に連続変化する
 - [ ] 濡れた領域がパッチ状（全面一様でない）
 - [ ] RainLayer の ON/OFF（または降雨強度）に追従する
+
+### 後続タスク（未実装）
+
+RainLayer 連動は RainLayer 自体が Scene 未マウントのため保留中。
+実装する場合は「降雨強度 0..1 の共有 uniform（または Scene の state）」を新設し、
+RainLayer のパーティクル量と TerrainLayer の wetness prop の両方に接続する。
+降り始め・止んだ後の乾きをつけるなら wetness を時定数付きで追従させる
+（useFrame で `wet += (target - wet) * dt / tau`、乾き側の tau を長めに）。
 
 ---
 

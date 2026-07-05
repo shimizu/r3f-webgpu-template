@@ -58,6 +58,9 @@ function Scene({ entityCount = 2000 }) {
       label: '草の配置',
     },
   })
+  const { wetness } = useControls('天候', {
+    wetness: { value: 0, min: 0, max: 1, step: 0.01, label: '地面の濡れ' },
+  })
   
   return (
     <>
@@ -102,6 +105,7 @@ function Scene({ entityCount = 2000 }) {
           baseHeight={1.5}
           seaLevel={SEA_LEVEL}
           onHeightData={setHeightInfo}
+          wetness={wetness}
         />
       </Coordinate>
 
