@@ -21,9 +21,7 @@ import GeojsonLayer from './layers/GeojsonLayer'
 // eslint-disable-next-line no-unused-vars
 import MovingEntitiesLayer from './layers/MovingEntitiesLayer'
 import TerrainLayer from './layers/TerrainLayer'
-// eslint-disable-next-line no-unused-vars
 import CloudLayer from './layers/CloudLayer'
-// eslint-disable-next-line no-unused-vars
 import Labels3DLayer from './layers/Labels3DLayer'
 import GrassLayer from './layers/GrassLayer'
 
@@ -135,8 +133,7 @@ function Scene({ entityCount = 2000 }) {
       />      
       */}
 
-      {/* 体積雲: 高層の巻雲（GrassLayer / 濡れ表現の動作確認のため一時無効化） */}
-      {/*
+      {/* 体積雲: 高層の巻雲（薄く広く、レイヤー重ねのデモ。薄い層なので steps 少なめ） */}
       <CloudLayer
         width={21.3}
         depth={12.6}
@@ -146,10 +143,9 @@ function Scene({ entityCount = 2000 }) {
         steps={12}
         position={[0, 5, 0]}
       />
-      */}
 
-      {/* HTML ラベル（動作確認のため一時無効化） */}
-      {/*<Labels3DLayer />*/}
+      {/* HTML ラベル */}
+      <Labels3DLayer />
 
     </>
   )
