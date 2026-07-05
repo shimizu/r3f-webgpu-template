@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useControls } from 'leva'
 import { MapControls } from '@react-three/drei'
 
@@ -15,6 +15,7 @@ import WaterBoxLayer from './layers/WaterBoxLayer'
 import WaterOceanLayer from './layers/WaterOceanLayer'
 import Coordinate from './gis/CoordinateContext'
 import { REGIONS, REGION_OPTIONS, regionFootprint } from './gis/regions'
+import { HeightFieldProvider, useHeightField } from './gis/HeightFieldContext'
 // eslint-disable-next-line no-unused-vars
 import GeojsonLayer from './layers/GeojsonLayer'
 // eslint-disable-next-line no-unused-vars
@@ -36,9 +37,19 @@ import GrassLayer from './layers/GrassLayer'
  * 地域固有の設定（DEM・ビュー・海面標高・移動体生成域等）は regions.js の
  * 地域プリセットに集約されており、leva の「地域」セレクタで切り替える。
  */
+// 地形ハイトフィールドを全レイヤーで共有するため、Scene 本体を
+// HeightFieldProvider でラップする（GPU バッファは Provider が 1 個だけ保持）
+function Scene(props) {
+  return (
+    <HeightFieldProvider>
+      <SceneContent {...props} />
+    </HeightFieldProvider>
+  )
+}
+
 // eslint-disable-next-line no-unused-vars
-function Scene({ entityCount = 2000 }) {
-  const [heightInfo, setHeightInfo] = useState(null)
+function SceneContent({ entityCount = 2000 }) {
+  const { heightInfo, setHeightInfo } = useHeightField()
   const { regionId, showOcean, grassPlacement, postfx } = useControls({
     regionId: { value: 'hormuz', options: REGION_OPTIONS, label: '地域' },
     showOcean: { value: true, label: '海面を表示' },
@@ -86,7 +97,7 @@ function Scene({ entityCount = 2000 }) {
   // （新 DEM ロード完了まで草・雨が旧地形の高さ場に配置されるのを防ぐ）
   useEffect(() => {
     setHeightInfo(null)
-  }, [regionId])
+  }, [regionId, setHeightInfo])
 
   return (
     <>
@@ -116,7 +127,7 @@ function Scene({ entityCount = 2000 }) {
       {grassPlacement === 'floor' && <GrassLayer area={40} position={[0, -1, 0]} />}
       {grassPlacement === 'terrain' && heightInfo && (
         <GrassLayer
-          heightInfo={heightInfo}
+          terrain
           seaLevel={region.seaLevel}
           bladeScale={0.4}
           position={[0, 0.5, 0]}
@@ -144,7 +155,7 @@ function Scene({ entityCount = 2000 }) {
       </Coordinate>
 
 
-      {/* 降雨: 地形フットプリントに合わせて散布し、heightInfo で地形衝突。
+      {/* 降雨: 地形フットプリントに合わせて散布し、共有ハイトフィールドで地形衝突。
           雨トグルで TerrainLayer の濡れ目標も駆動される（時定数追従は Terrain 側） */}
       {rain && heightInfo && (
         <RainLayer
@@ -153,7 +164,6 @@ function Scene({ entityCount = 2000 }) {
           depth={heightInfo.terrainDepth}
           topY={6}
           particleCount={15000}
-          heightInfo={heightInfo}
         />
       )}
 

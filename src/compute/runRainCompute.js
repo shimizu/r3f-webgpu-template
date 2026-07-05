@@ -26,11 +26,11 @@ import {
   cos,
   float,
   instanceIndex,
-  int,
   select,
   sin,
   storage,
   uniform,
+  vec2,
   vec3,
 } from 'three/tsl'
 
@@ -120,11 +120,9 @@ export function createRainComputeRunner({
   topY,
   rainSpeed,
   wind = [0.01, 0, 0.005],
-  heightData = null,
-  heightCols = 0,
-  heightRows = 0,
-  terrainWidth = 0,
-  terrainDepth = 0,
+  // HeightFieldContext の共有サンプラ（{ heightAt } を持つ）。
+  // null なら地形なし = y=0 平面に衝突する
+  heightSampler = null,
 }) {
   if (!navigator.gpu) {
     throw new Error('このブラウザは WebGPU compute に未対応です')
@@ -154,15 +152,8 @@ export function createRainComputeRunner({
   const splashLifeNode = storage(splashLifeAttribute, 'float', particleCount)
 
   // --- 高さマップ ---
-  let heightMapNode = null
-  let heightMapAttribute = null
-  const hasHeightMap = heightData && heightCols > 0 && heightRows > 0
-  if (hasHeightMap) {
-    heightMapAttribute = new StorageBufferAttribute(
-      new Float32Array(heightData), 1
-    )
-    heightMapNode = storage(heightMapAttribute, 'float', heightCols * heightRows).toReadOnly()
-  }
+  // GPU バッファは HeightFieldContext が 1 個だけ保持し、共有サンプラ経由で参照する
+  const hasHeightMap = !!heightSampler
 
   // --- ユニフォーム ---
   const timeNode = uniform(0)
@@ -173,13 +164,6 @@ export function createRainComputeRunner({
   const rainSpeedNode = uniform(rainSpeed)
   const windXNode = uniform(wind[0])
   const windZNode = uniform(wind[2])
-
-  const heightColsNode = uniform(heightCols)
-  const heightRowsNode = uniform(heightRows)
-  const terrainHalfWNode = uniform(terrainWidth / 2)
-  const terrainHalfDNode = uniform(terrainDepth / 2)
-  const terrainWidthNode = uniform(terrainWidth)
-  const terrainDepthNode = uniform(terrainDepth)
 
   const turbScaleNode = uniform(WIND_FIELD.turbulenceScale)
   const turbStrengthNode = uniform(WIND_FIELD.turbulenceStrength)
@@ -266,18 +250,10 @@ export function createRainComputeRunner({
     const nextPos = currentPos.add(nextVel.mul(frameScale)).toVar()
 
     // --- 地形高さサンプリング ---
+    // 共有サンプラ（sampleHeightField のバイリニア補間。草の接地と同一実装）
     let groundY
     if (hasHeightMap) {
-      const u = nextPos.x.add(terrainHalfWNode).div(terrainWidthNode).toVar()
-      const v = nextPos.z.add(terrainHalfDNode).div(terrainDepthNode).toVar()
-      const uClamped = clamp(u, 0.0, 0.999).toVar()
-      const vClamped = clamp(v, 0.0, 0.999).toVar()
-
-      const col = int(uClamped.mul(heightColsNode.sub(1)))
-      const row = int(vClamped.mul(heightRowsNode.sub(1)))
-      const heightIndex = row.mul(int(heightColsNode)).add(col)
-
-      groundY = heightMapNode.element(heightIndex).toVar()
+      groundY = heightSampler.heightAt(vec2(nextPos.x, nextPos.z)).toVar()
     } else {
       groundY = float(0.0).toVar()
     }
@@ -423,13 +399,13 @@ export function createRainComputeRunner({
       rainComputeNode.dispose()
       splashComputeNode.dispose()
       // standalone な StorageBufferAttribute は renderer 側に解放を依頼する
+      // （高さマップは HeightFieldContext 所有なのでここでは解放しない）
       disposeStorageAttributes(renderer, [
         positionAttribute,
         velocityAttribute,
         splashPosAttribute,
         splashVelAttribute,
         splashLifeAttribute,
-        heightMapAttribute,
       ])
     },
   }

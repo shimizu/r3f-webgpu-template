@@ -1,15 +1,11 @@
 import { useEffect, useMemo } from 'react'
 import * as THREE from 'three'
-import { useThree } from '@react-three/fiber'
 import { useControls } from 'leva'
-import { MeshStandardNodeMaterial, StorageBufferAttribute } from 'three/webgpu'
+import { MeshStandardNodeMaterial } from 'three/webgpu'
 import {
-  Fn,
   float,
-  int,
   vec3,
   uniform,
-  storage,
   positionGeometry,
   positionWorld,
   cameraPosition,
@@ -22,13 +18,12 @@ import {
   sin,
   cos,
   pow,
-  min,
   max,
   time,
 } from 'three/tsl'
 import { coverageMask } from '../tsl/coverageMask'
 import { createGroundField } from './groundField'
-import { disposeStorageAttributes } from '../compute/disposeStorageAttributes'
+import { useHeightField } from '../gis/HeightFieldContext'
 
 /**
  * GPU インスタンス草レイヤー（task.md T1）
@@ -43,14 +38,14 @@ import { disposeStorageAttributes } from '../compute/disposeStorageAttributes'
  *    野原を波が渡るコヒーレントな揺れになる
  *  - 密度は geometry.instanceCount の変更のみでスケール（再生成なし）
  *  - 接地は「worldXZ → 高さ」の heightAt 関数で抽象化:
- *      heightInfo なし → groundField の手続きマウンド（leva の起伏コントロール有効）
- *      heightInfo あり → TerrainLayer の DEM 高さバッファをバイリニア補間
- *                        （RainLayer の地形衝突と同じ storage buffer 参照方式。
- *                        散布域も terrainWidth × terrainDepth に切り替わり、
- *                        seaLevel（正規化標高）以下には生えない）
+ *      terrain=false → groundField の手続きマウンド（leva の起伏コントロール有効）
+ *      terrain=true  → HeightFieldContext の共有サンプラ（DEM バイリニア補間。
+ *                      RainLayer の地形衝突と同じ storage buffer を共有する。
+ *                      散布域も terrainWidth × terrainDepth に切り替わり、
+ *                      seaLevel（正規化標高）以下には生えない）
  *
- * heightInfo は TerrainLayer の onHeightData から渡す想定。毎レンダー新規
- * オブジェクトを渡すと GPU リソースが再生成されるため安定参照で渡すこと。
+ * terrain=true では HeightFieldContext（Scene の Provider + TerrainLayer の
+ * onHeightData）が heightInfo を発行するまで何も描画しない。
  */
 
 const SEGMENTS = 5
@@ -68,10 +63,10 @@ function mulberry32(seed) {
 }
 
 export default function GrassLayer({
-  area = 40, // 散布する正方形の一辺（レイヤーローカル単位。heightInfo 指定時は無視）
+  area = 40, // 散布する正方形の一辺（レイヤーローカル単位。terrain 時は無視）
   maxCount = 100000, // 生成ブレード数（density で間引く）
   position = [0, 0, 0],
-  heightInfo = null, // TerrainLayer の onHeightData が渡す DEM 高さバッファ（安定参照必須）
+  terrain = false, // true で HeightFieldContext の DEM 高さ場に接地する
   seaLevel = 0, // 正規化標高（TerrainLayer と同じ値）。leva「生育下限標高」の初期値にのみ使う
   bladeScale = 1, // 草丈・葉幅の一括倍率（leva 値に乗算。DEM 上ではスケールを合わせるのに使う）
 }) {
@@ -123,9 +118,12 @@ export default function GrassLayer({
     elevFade: { value: 0.04, min: 0.005, max: 0.2, step: 0.005, label: '標高フェード幅' },
   })
 
-  const renderer = useThree((state) => state.gl)
+  // DEM 高さ場は HeightFieldContext から共有取得（GPU バッファは Provider が 1 個だけ保持）
+  const { heightInfo: ctxHeightInfo, gpu } = useHeightField()
+  const heightInfo = terrain ? ctxHeightInfo : null
+  const sampler = terrain ? gpu?.sampler ?? null : null
 
-  const { geometry, material, uniforms, heightsAttr } = useMemo(() => {
+  const { geometry, material, uniforms } = useMemo(() => {
     // 散布域: DEM モードでは地形フットプリントに合わせる（X と Z が異なる）
     const areaX = heightInfo ? heightInfo.terrainWidth : area
     const areaZ = heightInfo ? heightInfo.terrainDepth : area
@@ -200,33 +198,11 @@ export default function GrassLayer({
     }
     const u = uniforms
 
-    // 接地関数（worldXZ → 高さ）。DEM があれば heights の storage buffer を
-    // バイリニア補間、なければ手続きマウンド（groundField）
+    // 接地関数（worldXZ → 高さ）。DEM があれば共有サンプラ（sampleHeightField の
+    // バイリニア補間。RainLayer の地形衝突と同じ実装）、なければ手続きマウンド（groundField）
     let heightAt
-    let heightsAttr = null
-    if (heightInfo) {
-      const { heights, cols, rows, terrainWidth, terrainDepth } = heightInfo
-      heightsAttr = new StorageBufferAttribute(heights, 1)
-      const heightsNode = storage(heightsAttr, 'float', cols * rows).toReadOnly()
-      const halfW = terrainWidth / 2
-      const halfD = terrainDepth / 2
-      heightAt = Fn(([xz]) => {
-        // RainLayer の衝突ルックアップと同じ格子対応（等間隔格子前提。
-        // mercator / natural-earth では近似になる — TerrainLayer 側の注記参照）
-        const fx = clamp(xz.x.add(halfW).div(terrainWidth), 0, 1).mul(cols - 1)
-        const fz = clamp(xz.y.add(halfD).div(terrainDepth), 0, 1).mul(rows - 1)
-        const x0 = int(fx) // 非負なので trunc = floor
-        const z0 = int(fz)
-        const x1 = min(x0.add(1), int(cols - 1))
-        const z1 = min(z0.add(1), int(rows - 1))
-        const tx = fx.sub(float(x0))
-        const tz = fz.sub(float(z0))
-        const h00 = heightsNode.element(z0.mul(int(cols)).add(x0))
-        const h10 = heightsNode.element(z0.mul(int(cols)).add(x1))
-        const h01 = heightsNode.element(z1.mul(int(cols)).add(x0))
-        const h11 = heightsNode.element(z1.mul(int(cols)).add(x1))
-        return mix(mix(h00, h10, tx), mix(h01, h11, tx), tz)
-      })
+    if (heightInfo && sampler) {
+      heightAt = sampler.heightAt
     } else {
       const ground = createGroundField({
         moundScale: u.moundScale,
@@ -325,8 +301,8 @@ export default function GrassLayer({
 
     geometry.instanceCount = Math.floor(maxCount * 0.15)
 
-    return { geometry, material, uniforms, heightsAttr }
-  }, [area, maxCount, heightInfo])
+    return { geometry, material, uniforms }
+  }, [area, maxCount, heightInfo, sampler])
 
   // 密度 = instanceCount の変更のみ（ジオメトリ再生成なし）
   useEffect(() => {
@@ -386,10 +362,12 @@ export default function GrassLayer({
     return () => {
       geometry.dispose()
       material.dispose()
-      // 高さバッファはジオメトリ非経由の standalone storage なので明示解放が必要
-      if (heightsAttr) disposeStorageAttributes(renderer, [heightsAttr])
+      // 高さバッファの解放は HeightFieldContext（Provider）が担う
     }
-  }, [geometry, material, heightsAttr, renderer])
+  }, [geometry, material])
+
+  // DEM モードで高さ場がまだ無い間は描画しない（hooks 実行後に判定）
+  if (terrain && (!heightInfo || !sampler)) return null
 
   return (
     <mesh
