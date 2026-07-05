@@ -25,11 +25,14 @@ import {
   screenCoordinate,
   smoothstep,
   time,
+  uniform,
   varying,
   vec2,
   vec3,
   vec4,
 } from 'three/tsl'
+
+import { valueFbm3 } from '../tsl/valueNoise'
 
 /*
   TSL raymarching による体積雲レイヤー。
@@ -39,6 +42,14 @@ import {
   密度は「weather 場 → coverage remap → 垂直プロファイル → base shape → detail 侵食」
   の順で組織化し、サンプルごとに太陽方向へ短い光学深度マーチを行って
   Beer 減衰 + powder + Henyey-Greenstein 位相でライティングする。
+
+  品質モード（quality prop）:
+  - 'low'（既定）: 全ノイズを hash ベースの value noise（valueFbm3）で評価する
+    軽量版。サンプル単価が数分の一になる代わりに、積雲のカリフラワー構造
+    （Worley のセル状ローブ）は失われ、縁がややもや寄りになる
+  - 'high': MaterialX ノイズ（mx_fractal_noise = Perlin + mx_worley = 27 セル走査）。
+    もこもこの塊感・筋状の切れ目が最も良く出るが GPU 単価が高い。
+    cumulus を主役にする lookdev や、負荷に余裕がある構成で使う
 
   Coordinate（GIS 投影）とは無関係のワールド座標レイヤー。
   制限: シーン深度クランプを持たないため、不透明物がボックス内部に
@@ -163,6 +174,7 @@ const CLOUD_DEFAULTS = {
   coverage: 0.45,
   type: 'cumulus',
   steps: 32,
+  quality: 'low', // 'low'（軽量 value noise）| 'high'（mx Perlin + Worley）
 }
 // inline 配列を避けるためのモジュール定数（useMemo は使わないが慣例に合わせる）
 const DEFAULT_POSITION = [0, 6, 0]
@@ -207,20 +219,25 @@ function hgPhase(cosTheta, g) {
 // 密度関数ファクトリ
 // ============================================================
 
-// preset と coverage から密度サンプラを2段構えで構築する。
+// preset と coverage uniforms から密度サンプラを2段構えで構築する。
 // - sampleBase: weather(2D fBM) × coverage remap × 垂直プロファイル × 端フェードのみの
 //   安い密度。空空間の判定と、太陽方向の光学深度マーチに使う
 // - sampleDensity: base が正の場所だけ 3D shape / detail の侵食を評価するフル密度。
 //   空空間で 3D ノイズを評価しないことが GPU 負荷（TDR 対策）の要
 // ノイズ座標はワールド空間（scale による歪みなし・複数マウントで位相が変わる）。
 // ライトマーチはボックス外の localPos も渡すが、プロファイルと端フェードで自然に 0 になる
-function createDensitySamplers(preset, coverage) {
-  // coverage は「remap の閾値シフト」として効かせる（最終密度への乗算ではない）。
-  // coverage が大きい → threshold が下がる → weather のより広い領域が雲化する
-  const covered = Math.min(Math.max(coverage + preset.coverageBias, 0), 1)
-  const threshold = 1 - covered
-  let upper = Math.min(threshold + preset.coverageSoftness, 1)
-  if (upper - threshold < 1e-4) upper = threshold + 1e-4
+// cov = { threshold, upper } の uniform ノード。coverage は「remap の閾値シフト」として
+// 効かせる（最終密度への乗算ではない）設計で、値の計算はコンポーネント側
+// （applyCoverageUniforms）が行い、スライダー操作では再コンパイルが走らない
+function createDensitySamplers(preset, cov, quality) {
+  // 品質モード別のノイズ選択。パイプライン（remap・プロファイル・侵食の組織化）は
+  // 共通で、fBm と detail のノイズ実装だけを差し替える
+  const cheap = quality !== 'high'
+  // 0..1 正規化済み fBm。mx_fractal は ±1 を超えうるので remap + clamp、
+  // valueFbm3 はもともと概ね 0..1
+  const fbm01 = cheap
+    ? (p, octaves) => clamp(valueFbm3(p, octaves), 0, 1)
+    : (p, octaves) => clamp(mx_fractal_noise_float(p, octaves).mul(0.5).add(0.5), 0, 1)
 
   // cirrus の高さシア込みの X 座標（shear=0 なら worldP.x のまま）
   const shearedX = (worldP, h) =>
@@ -237,18 +254,15 @@ function createDensitySamplers(preset, coverage) {
     const px = shearedX(worldP, h)
 
     // --- 1) weather 場（2D, XZ）---
-    // mx_fractal_noise はオクターブ合成で ±1 を超えうるので正規化後に clamp 必須
     const weatherP = vec3(
       px.mul(preset.weatherScale[0]).add(time.mul(preset.windWeather[0])),
       worldP.z.mul(preset.weatherScale[1]).add(time.mul(preset.windWeather[1])),
       0
     )
-    const weather = clamp(
-      mx_fractal_noise_float(weatherP, preset.weatherOctaves).mul(0.5).add(0.5), 0, 1
-    )
+    const weather = fbm01(weatherP, preset.weatherOctaves)
 
     // --- 2) coverage remap ---
-    const base = smoothstep(threshold, upper, weather)
+    const base = smoothstep(cov.threshold, cov.upper, weather)
 
     // --- 3) 垂直プロファイル ---
     // 減少側の smoothstep(edge0 > edge1) は仕様未定義なので必ず oneMinus 形で書く
@@ -279,7 +293,7 @@ function createDensitySamplers(preset, coverage) {
         worldP.y.mul(preset.shapeScale[1]),
         worldP.z.mul(preset.shapeScale[2]).add(time.mul(preset.windShape[1]))
       )
-      const shape = clamp(mx_fractal_noise_float(shapeP, 3).mul(0.5).add(0.5), 0, 1)
+      const shape = fbm01(shapeP, 3)
       const eroded = remapClamped(shaped, shape.oneMinus().mul(preset.shapeAmount), float(1))
 
       // --- 5) detail 侵食（加算ではなく削り。高さ依存で挙動を切替） ---
@@ -289,8 +303,17 @@ function createDensitySamplers(preset, coverage) {
         worldP.y.mul(preset.detailScale),
         worldP.z.mul(preset.detailScale).add(time.mul(preset.windDetail[1]))
       )
-      const worley = clamp(mx_worley_noise_float(detailP), 0, 1)
-      const detail = preset.detailStyle === 'wispy' ? worley : worley.oneMinus()
+      let detail
+      if (cheap) {
+        // value noise の billow / turbulence 近似:
+        // ridged = |2n-1| は筋状の畝（wispy）、反転すると丸いローブ（billow）。
+        // Worley のセル状構造の完全な代替ではないが単価は 1/3〜1/5
+        const ridged = clamp(valueFbm3(detailP, 2), 0, 1).mul(2).sub(1).abs()
+        detail = preset.detailStyle === 'wispy' ? ridged : ridged.oneMinus()
+      } else {
+        const worley = clamp(mx_worley_noise_float(detailP), 0, 1)
+        detail = preset.detailStyle === 'wispy' ? worley : worley.oneMinus()
+      }
       // 上部: pow でふわふわ / 下部: 反転で削れる（whippy）
       const modifier = mix(detail.oneMinus(), detail.pow(4), smoothstep(0.2, 0.4, h))
         .mul(preset.detailAmount)
@@ -308,9 +331,20 @@ function createDensitySamplers(preset, coverage) {
 // マテリアルファクトリ
 // ============================================================
 
-function createCloudMaterial({ type, coverage, steps }) {
+// coverage（0..1）と preset から remap 閾値を計算して uniform に反映する。
+// coverage が大きい → threshold が下がる → weather のより広い領域が雲化する
+function applyCoverageUniforms(cov, preset, coverage) {
+  const covered = Math.min(Math.max(coverage + preset.coverageBias, 0), 1)
+  const threshold = 1 - covered
+  let upper = Math.min(threshold + preset.coverageSoftness, 1)
+  if (upper - threshold < 1e-4) upper = threshold + 1e-4
+  cov.threshold.value = threshold
+  cov.upper.value = upper
+}
+
+function createCloudMaterial({ type, cov, steps, quality }) {
   const preset = CLOUD_TYPES[type] ?? CLOUD_TYPES[CLOUD_DEFAULTS.type]
-  const { sampleBase, sampleDensity } = createDensitySamplers(preset, coverage)
+  const { sampleBase, sampleDensity } = createDensitySamplers(preset, cov, quality)
 
   const material = new MeshBasicNodeMaterial({
     transparent: true,
@@ -413,9 +447,11 @@ function createCloudMaterial({ type, coverage, steps }) {
  * @param {number} width - XZ 範囲の幅（ワールド単位）
  * @param {number} depth - XZ 範囲の奥行
  * @param {number} thickness - 雲層の厚み（Y）
- * @param {number} coverage - 雲量 0..1（remap 閾値シフト: 面積が変わる）
+ * @param {number} coverage - 雲量 0..1（remap 閾値シフト: 面積が変わる）。
+ *   uniform 駆動なのでスライダー変更で再コンパイルは走らない
  * @param {string} type - 'cumulus' | 'stratus' | 'cirrus'
  * @param {number} steps - raymarch サンプル数（重い場合は 32 へ）
+ * @param {string} quality - 'low'（軽量 value noise、既定）| 'high'（mx Perlin + Worley）
  * @param {Array} position - 雲ボックス中心のワールド座標
  */
 function CloudLayer({
@@ -425,12 +461,23 @@ function CloudLayer({
   coverage = CLOUD_DEFAULTS.coverage,
   type = CLOUD_DEFAULTS.type,
   steps = CLOUD_DEFAULTS.steps,
+  quality = CLOUD_DEFAULTS.quality,
   position = DEFAULT_POSITION,
 }) {
+  // coverage の remap 閾値は uniform 化（生成一度きり、値更新のみ）
+  const cov = useMemo(
+    () => ({ threshold: uniform(0.5), upper: uniform(0.6) }),
+    []
+  )
+  useEffect(() => {
+    const preset = CLOUD_TYPES[type] ?? CLOUD_TYPES[CLOUD_DEFAULTS.type]
+    applyCoverageUniforms(cov, preset, coverage)
+  }, [cov, type, coverage])
+
   // 位置・寸法は modelWorldMatrix が吸収するので material 依存はシェーダ定数のみ
   const material = useMemo(
-    () => createCloudMaterial({ type, coverage, steps }),
-    [type, coverage, steps]
+    () => createCloudMaterial({ type, cov, steps, quality }),
+    [type, cov, steps, quality]
   )
 
   useEffect(() => () => material.dispose(), [material])
