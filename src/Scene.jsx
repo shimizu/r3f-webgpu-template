@@ -16,6 +16,8 @@ import WaterOceanLayer from './layers/WaterOceanLayer'
 import Coordinate from './gis/CoordinateContext'
 import { REGIONS, REGION_OPTIONS, regionFootprint } from './gis/regions'
 import { HeightFieldProvider, useHeightField } from './gis/HeightFieldContext'
+import { deriveLayerInputs } from './scenario/weather'
+import { useScenario } from './scenario/useScenario'
 // eslint-disable-next-line no-unused-vars
 import GeojsonLayer from './layers/GeojsonLayer'
 // eslint-disable-next-line no-unused-vars
@@ -109,6 +111,20 @@ function SceneContent({ entityCount = 2000 }) {
     }
   )
 
+  // シナリオ再生（leva「シナリオ」フォルダ）。選択中はシナリオの weather が
+  // 手動（天候フォルダ）より優先される。連動ルールは deriveLayerInputs に集約
+  const scenarioWeather = useScenario()
+  const manualWeather = {
+    rainIntensity: rain ? rainIntensity : 0,
+    snowIntensity: snow ? 1 : 0,
+    fogDensity: fogAmount,
+    floodLevel,
+    wetness,
+    cloudCoverage,
+    cloudType,
+  }
+  const inputs = deriveLayerInputs(scenarioWeather ?? manualWeather)
+
   const region = REGIONS[regionId]
   // 海面・雲は heightInfo（DEM ロード完了）を待たずにマウントするため、
   // フットプリントは bbox + view から事前計算する
@@ -134,9 +150,8 @@ function SceneContent({ entityCount = 2000 }) {
 
       {/* 高さフォグ（scene.fogNode）。マウントしっぱなしで density を uniform 駆動
           （条件マウントにすると全マテリアル再コンパイルが走る）。
-          スライダー 0 で完全無効。雨との自動連動はしない（シナリオ導入時に
-          weather 派生で駆動する予定） */}
-      <HeightFogLayer density={fogAmount} baseY={0.5} />
+          手動時はスライダー 0 で完全無効。シナリオはキーフレームで明示駆動 */}
+      <HeightFogLayer density={inputs.fogDensity} baseY={0.5} />
 
       {/* 地図閲覧に適したカメラ操作（左ドラッグで移動、右ドラッグで回転） */}
       <MapControls
@@ -172,9 +187,9 @@ function SceneContent({ entityCount = 2000 }) {
           baseHeight={region.terrain.baseHeight}
           seaLevel={region.seaLevel}
           onHeightData={setHeightInfo}
-          wetness={Math.max(wetness, rain ? rainIntensity * 0.9 : 0, floodLevel > 0.02 ? 0.9 : 0)}
+          wetness={inputs.wetnessTarget}
           snowAmount={snowAmount}
-          snowing={snow}
+          snowing={inputs.snowing}
           snowLine={snowLine}
           snowAspect={snowAspect}
           snowColor={snowColor}
@@ -184,32 +199,34 @@ function SceneContent({ entityCount = 2000 }) {
 
 
       {/* 降雨: 地形フットプリントに合わせて散布し、共有ハイトフィールドで地形衝突。
-          雨トグルで TerrainLayer の濡れ目標も駆動される（時定数追従は Terrain 側） */}
-      {rain && heightInfo && (
+          雨は TerrainLayer の濡れ目標も駆動する（連動は deriveLayerInputs、
+          時定数追従は Terrain 側） */}
+      {inputs.rainActive && heightInfo && (
         <RainLayer
           position={[0, 0.5, 0]}
           width={heightInfo.terrainWidth}
           depth={heightInfo.terrainDepth}
           topY={6}
           particleCount={15000}
-          intensity={rainIntensity}
+          intensity={inputs.rainIntensity}
         />
       )}
 
       {/* 降雪: 地形フットプリントに散布し、共有ハイトフィールドで着地静止 + フェード。
-          雪トグルは TerrainLayer の堆積（snowing）もゆっくり駆動する */}
-      {snow && heightInfo && (
+          雪は TerrainLayer の堆積（snowing）もゆっくり駆動する */}
+      {inputs.snowActive && heightInfo && (
         <SnowLayer
           position={[0, 0.5, 0]}
           width={heightInfo.terrainWidth}
           depth={heightInfo.terrainDepth}
           topY={6}
           particleCount={12000}
+          intensity={inputs.snowIntensity}
         />
       )}
 
       {/* 海面レイヤー（投影後の地形フットプリントに合わせる）。
-          浸水スライダーで水位が上がり、水位に応じて泥水に濁る */}
+          浸水で水位が上がり、水位・雨量に応じて泥水に濁る */}
       {showOcean && (
         <WaterOceanLayer
           width={footprint.width}
@@ -217,8 +234,8 @@ function SceneContent({ entityCount = 2000 }) {
           depth={1}
           opacity={0.85}
           position={[0, 0.5, 0]}
-          floodLevel={floodLevel}
-          murkiness={Math.min(1, floodLevel * 2.5 + (rain ? rainIntensity * 0.25 : 0))}
+          floodLevel={inputs.floodLevel}
+          murkiness={inputs.murkiness}
         />
       )}
 
@@ -234,14 +251,14 @@ function SceneContent({ entityCount = 2000 }) {
       />      
       */}
 
-      {/* 体積雲（タイプ・雲量・品質は leva「天候」フォルダで変更。
+      {/* 体積雲（タイプ・雲量は weather 経由、品質は leva「天候」フォルダ。
           雲量は uniform 駆動、タイプ・品質の切替は再コンパイルが走る） */}
       <CloudLayer
         width={footprint.width}
         depth={footprint.depth}
         thickness={1.5}
-        coverage={cloudCoverage}
-        type={cloudType}
+        coverage={inputs.cloudCoverage}
+        type={inputs.cloudType}
         steps={12}
         quality={cloudQuality}
         position={[0, region.cloudHeight, 0]}

@@ -61,6 +61,10 @@ const REST_TIME = 1.5                // 地表に静止してからフェード�
 const RESPAWN_WIND_CARRY = 0.5       // リスポーン時に風場の影響をどれだけ引き継ぐか
 const RESPAWN_VELOCITY_JITTER = 0.008
 
+// --- 雪量ゲート ---
+const PARKED_Y = -1000               // 非活性粒の退避先 Y（画面外）
+const INTENSITY_WIND_BASE = 0.5      // 雪量 0 のときの風・突風の強さ倍率（+雪量で 1.5 まで）
+
 // ============================================================
 
 function hash01(value) {
@@ -136,6 +140,8 @@ export function createSnowComputeRunner({
   const turbStrengthNode = uniform(WIND_FIELD.turbulenceStrength)
   const gustFreqNode = uniform(WIND_FIELD.gustFrequency)
   const gustStrengthNode = uniform(WIND_FIELD.gustStrength)
+  // 雪量 0..1。instanceIndex < intensity×count の粒だけ降らせる（rain と同パターン）
+  const intensityNode = uniform(1)
 
   // --- 3D ノイズ風場（共有 Fn。strength/scale は uniform 駆動） ---
   const { windAt } = createWindField({
@@ -195,14 +201,18 @@ export function createSnowComputeRunner({
       groundY = float(0.0).toVar()
     }
 
+    // --- 雪量ゲート ---
+    const active = float(instanceIndex).lessThan(intensityNode.mul(float(particleCount)))
+    const parked = currentPos.y.lessThan(float(PARKED_Y * 0.5))
+
     // --- 状態判定 ---
     // 落下中に接地 → 静止開始 / 静止中に rest が切れる or 落下中に場外 → リスポーン
-    const hitGround = resting.not().and(nextPos.y.lessThanEqual(groundY))
+    const hitGround = resting.not().and(parked.not()).and(nextPos.y.lessThanEqual(groundY))
     const outside = resting.not().and(
       nextPos.x.abs().greaterThan(halfWNode).or(nextPos.z.abs().greaterThan(halfDNode))
     )
     const restExpired = resting.and(currentRest.sub(deltaNode).lessThanEqual(0.0))
-    const needsRespawn = restExpired.or(outside)
+    const needsRespawn = restExpired.or(outside).or(parked)
 
     // --- リスポーン先 ---
     const respawnSeed = timeNode.mul(0.41).add(idPhase.mul(23.7)).toVar()
@@ -220,27 +230,35 @@ export function createSnowComputeRunner({
     // 着地スナップ位置（地表のわずかに上でフェードさせる）
     const landPos = vec3(nextPos.x, groundY.add(0.004), nextPos.z)
 
-    // --- 最終状態の合成: respawn > 静止継続 > 着地 > 落下 ---
-    const finalPos = vec3(
+    // --- 最終状態の合成: respawn > 静止継続 > 着地 > 落下（非活性は画面外へ退避） ---
+    const activePos = vec3(
       select(needsRespawn, respawnPos.x, select(resting, currentPos.x, select(hitGround, landPos.x, nextPos.x))),
       select(needsRespawn, respawnPos.y, select(resting, currentPos.y, select(hitGround, landPos.y, nextPos.y))),
       select(needsRespawn, respawnPos.z, select(resting, currentPos.z, select(hitGround, landPos.z, nextPos.z)))
     )
     const still = resting.or(hitGround)
-    const finalVel = vec3(
+    const activeVel = vec3(
       select(needsRespawn, respawnVel.x, select(still, float(0), nextVel.x)),
       select(needsRespawn, respawnVel.y, select(still, float(0), nextVel.y)),
       select(needsRespawn, respawnVel.z, select(still, float(0), nextVel.z))
     )
-    const finalRest = select(
+    const activeRest = select(
       needsRespawn,
       float(0),
       select(resting, currentRest.sub(deltaNode), select(hitGround, float(REST_TIME), float(0)))
     )
 
-    pos.assign(finalPos)
-    vel.assign(finalVel)
-    rest.assign(finalRest)
+    pos.assign(vec3(
+      select(active, activePos.x, currentPos.x),
+      select(active, activePos.y, float(PARKED_Y)),
+      select(active, activePos.z, currentPos.z)
+    ))
+    vel.assign(vec3(
+      select(active, activeVel.x, float(0)),
+      select(active, activeVel.y, float(0)),
+      select(active, activeVel.z, float(0))
+    ))
+    rest.assign(select(active, activeRest, float(0)))
   })().compute(particleCount, [WORKGROUP_SIZE])
 
   return {
@@ -258,6 +276,16 @@ export function createSnowComputeRunner({
       timeNode.value = time
       deltaNode.value = delta || DEFAULT_DELTA
       renderer.compute(snowComputeNode)
+    },
+
+    // 雪量 0..1（uniform 駆動 = 再コンパイルなし）。粒数に加えて
+    // 乱流・突風の強さも雪量に連動させる
+    setIntensity(value) {
+      const v = Math.min(Math.max(value, 0), 1)
+      intensityNode.value = v
+      const windScale = INTENSITY_WIND_BASE + v
+      turbStrengthNode.value = WIND_FIELD.turbulenceStrength * windScale
+      gustStrengthNode.value = WIND_FIELD.gustStrength * windScale
     },
 
     destroy(renderer) {
