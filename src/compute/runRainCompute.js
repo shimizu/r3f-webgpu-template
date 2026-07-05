@@ -17,9 +17,6 @@
   雨粒が地面に衝突すると、同インデックスのスプラッシュ粒子を発生させる。
   スプラッシュは衝突点から放射状に広がり、重力で落下しながら寿命で消える。
 */
-import { StorageBufferAttribute } from 'three/webgpu'
-
-import { disposeStorageAttributes } from './disposeStorageAttributes'
 import {
   Fn,
   clamp,
@@ -28,11 +25,13 @@ import {
   instanceIndex,
   select,
   sin,
-  storage,
   uniform,
   vec2,
   vec3,
 } from 'three/tsl'
+
+import { createParticleBuffers } from './particleBuffers'
+import { createWindField } from '../tsl/windField'
 
 // ============================================================
 // 調整用パラメータ — ここを変えれば見た目が変わる
@@ -46,7 +45,7 @@ const VELOCITY_VARIATION_MIN = 0.8   // 落下速度の最小倍率
 const VELOCITY_VARIATION_MAX = 1.2   // 落下速度の最大倍率 (min + range)
 const VELOCITY_HORIZONTAL_JITTER = 0.005 // 初期水平速度のランダム幅
 
-// --- 3D ノイズ風場 ---
+// --- 3D ノイズ風場（実装は src/tsl/windField.js を共有） ---
 const WIND_FIELD = {
   turbulenceScale: 0.2,     // ノイズの空間周波数（小さい = 大きなうねり）
   turbulenceStrength: 0.01, // 乱流の強さ（控えめ: ほぼ真下に落ちつつ微かに揺れる程度）
@@ -55,11 +54,6 @@ const WIND_FIELD = {
   gustFrequency: 0.5,        // 突風の時間変動周波数（穏やかに）
   gustStrength: 0.02,       // 突風の追加強度（控えめ）
   gustSpatialScale: { x: 0.03, z: 0.04 }, // 突風の空間変動スケール
-  octaves: [
-    { freq: 1.0, amp: 1.0 },   // オクターブ 1: 大きなうねり
-    { freq: 2.3, amp: 0.4 },   // オクターブ 2: 中程度の渦
-    { freq: 4.7, amp: 0.15 },  // オクターブ 3: 細かい乱流
-  ],
 }
 
 // --- 速度制限 ---
@@ -131,25 +125,20 @@ export function createRainComputeRunner({
   const halfW = areaWidth / 2
   const halfD = areaDepth / 2
 
-  // --- 雨バッファ ---
-  const initialPositions = createInitialPositions(particleCount, halfW, halfD, topY)
-  const initialVelocities = createInitialVelocities(particleCount, rainSpeed, wind)
+  // --- 雨バッファ + スプラッシュバッファ（スプラッシュは雨粒と 1:1。life <= 0 なら非表示） ---
+  const buffers = createParticleBuffers(particleCount, {
+    pos: { itemSize: 3, data: createInitialPositions(particleCount, halfW, halfD, topY) },
+    vel: { itemSize: 3, data: createInitialVelocities(particleCount, rainSpeed, wind) },
+    splashPos: 3,
+    splashVel: 3,
+    splashLife: 1,
+  })
 
-  const positionAttribute = new StorageBufferAttribute(initialPositions, 3)
-  const velocityAttribute = new StorageBufferAttribute(initialVelocities, 3)
-
-  const positionNode = storage(positionAttribute, 'vec3', particleCount)
-  const velocityNode = storage(velocityAttribute, 'vec3', particleCount)
-
-  // --- スプラッシュバッファ ---
-  // 雨粒と 1:1 対応。life <= 0 なら非表示。
-  const splashPosAttribute = new StorageBufferAttribute(new Float32Array(particleCount * 3), 3)
-  const splashVelAttribute = new StorageBufferAttribute(new Float32Array(particleCount * 3), 3)
-  const splashLifeAttribute = new StorageBufferAttribute(new Float32Array(particleCount), 1)
-
-  const splashPosNode = storage(splashPosAttribute, 'vec3', particleCount)
-  const splashVelNode = storage(splashVelAttribute, 'vec3', particleCount)
-  const splashLifeNode = storage(splashLifeAttribute, 'float', particleCount)
+  const positionNode = buffers.nodes.pos
+  const velocityNode = buffers.nodes.vel
+  const splashPosNode = buffers.nodes.splashPos
+  const splashVelNode = buffers.nodes.splashVel
+  const splashLifeNode = buffers.nodes.splashLife
 
   // --- 高さマップ ---
   // GPU バッファは HeightFieldContext が 1 個だけ保持し、共有サンプラ経由で参照する
@@ -170,6 +159,17 @@ export function createRainComputeRunner({
   const gustFreqNode = uniform(WIND_FIELD.gustFrequency)
   const gustStrengthNode = uniform(WIND_FIELD.gustStrength)
 
+  // --- 3D ノイズ風場（共有 Fn。strength/scale は uniform 駆動） ---
+  const { windAt } = createWindField({
+    turbScale: turbScaleNode,
+    turbStrength: turbStrengthNode,
+    gustFrequency: gustFreqNode,
+    gustStrength: gustStrengthNode,
+    timeScale: WIND_FIELD.timeScale,
+    yDamping: WIND_FIELD.yDamping,
+    gustSpatialScale: WIND_FIELD.gustSpatialScale,
+  })
+
   // --- 雨コンピュートシェーダー ---
   const rainComputeNode = Fn(() => {
     const pos = positionNode.element(instanceIndex)
@@ -181,51 +181,7 @@ export function createRainComputeRunner({
     const frameScale = deltaNode.mul(60).toVar()
     const idPhase = float(instanceIndex).mul(0.17).toVar()
 
-    // --- 3D ノイズ風場 ---
-    const noiseX = currentPos.x.mul(turbScaleNode).toVar()
-    const noiseY = currentPos.y.mul(turbScaleNode).toVar()
-    const noiseZ = currentPos.z.mul(turbScaleNode).toVar()
-    const noiseT = timeNode.mul(WIND_FIELD.timeScale).toVar()
-
-    const windFX = float(0).toVar()
-    const windFY = float(0).toVar()
-    const windFZ = float(0).toVar()
-
-    // オクターブ 1
-    const f1 = float(WIND_FIELD.octaves[0].freq)
-    const a1 = float(WIND_FIELD.octaves[0].amp)
-    windFX.addAssign(sin(noiseX.mul(f1).mul(1.7).add(noiseZ.mul(2.3)).add(noiseT.mul(1.1))).mul(a1))
-    windFY.addAssign(cos(noiseY.mul(f1).mul(1.3).add(noiseX.mul(1.9)).add(noiseT.mul(0.7))).mul(a1).mul(WIND_FIELD.yDamping))
-    windFZ.addAssign(sin(noiseZ.mul(f1).mul(2.1).add(noiseY.mul(1.7)).add(noiseT.mul(0.9))).mul(a1))
-
-    // オクターブ 2
-    const f2 = float(WIND_FIELD.octaves[1].freq)
-    const a2 = float(WIND_FIELD.octaves[1].amp)
-    windFX.addAssign(cos(noiseX.mul(f2).mul(3.1).add(noiseY.mul(4.7)).add(noiseT.mul(1.9))).mul(a2))
-    windFY.addAssign(sin(noiseZ.mul(f2).mul(2.7).add(noiseX.mul(3.3)).add(noiseT.mul(1.3))).mul(a2).mul(WIND_FIELD.yDamping))
-    windFZ.addAssign(cos(noiseZ.mul(f2).mul(3.7).add(noiseY.mul(2.9)).add(noiseT.mul(1.7))).mul(a2))
-
-    // オクターブ 3
-    const f3 = float(WIND_FIELD.octaves[2].freq)
-    const a3 = float(WIND_FIELD.octaves[2].amp)
-    windFX.addAssign(sin(noiseX.mul(f3).mul(5.3).add(noiseZ.mul(7.1)).add(noiseT.mul(2.7))).mul(a3))
-    windFY.addAssign(cos(noiseY.mul(f3).mul(4.9).add(noiseZ.mul(6.3)).add(noiseT.mul(2.1))).mul(a3).mul(WIND_FIELD.yDamping))
-    windFZ.addAssign(sin(noiseZ.mul(f3).mul(6.7).add(noiseX.mul(5.9)).add(noiseT.mul(2.9))).mul(a3))
-
-    // 突風
-    const gustPhase = timeNode.mul(gustFreqNode).add(
-      currentPos.x.mul(WIND_FIELD.gustSpatialScale.x).add(
-        currentPos.z.mul(WIND_FIELD.gustSpatialScale.z)
-      )
-    ).toVar()
-    const gustFactor = sin(gustPhase).mul(0.5).add(0.5).toVar()
-    const gustBoost = gustFactor.mul(gustStrengthNode).toVar()
-
-    const windForce = vec3(
-      windFX.mul(turbStrengthNode).add(gustBoost.mul(sin(gustPhase.mul(1.3)))),
-      windFY.mul(turbStrengthNode),
-      windFZ.mul(turbStrengthNode).add(gustBoost.mul(cos(gustPhase.mul(0.9))))
-    ).mul(frameScale).toVar()
+    const windForce = windAt(currentPos, timeNode).mul(frameScale).toVar()
 
     const nextVel = currentVel.add(windForce).toVar()
 
@@ -375,7 +331,7 @@ export function createRainComputeRunner({
 
   return {
     particleCount,
-    positionAttribute,
+    positionAttribute: buffers.attributes.pos,
     positionNode,
     velocityNode,
 
@@ -398,15 +354,8 @@ export function createRainComputeRunner({
     destroy(renderer) {
       rainComputeNode.dispose()
       splashComputeNode.dispose()
-      // standalone な StorageBufferAttribute は renderer 側に解放を依頼する
-      // （高さマップは HeightFieldContext 所有なのでここでは解放しない）
-      disposeStorageAttributes(renderer, [
-        positionAttribute,
-        velocityAttribute,
-        splashPosAttribute,
-        splashVelAttribute,
-        splashLifeAttribute,
-      ])
+      // 高さマップは HeightFieldContext 所有なのでここでは解放しない
+      buffers.dispose(renderer)
     },
   }
 }

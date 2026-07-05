@@ -50,12 +50,15 @@ function Scene(props) {
 // eslint-disable-next-line no-unused-vars
 function SceneContent({ entityCount = 2000 }) {
   const { heightInfo, setHeightInfo } = useHeightField()
-  const { regionId, showOcean, grassPlacement, postfx } = useControls({
+  const { regionId, showOcean, showGrass, grassPlacement, postfx } = useControls({
     regionId: { value: 'hormuz', options: REGION_OPTIONS, label: '地域' },
     showOcean: { value: true, label: '海面を表示' },
+    // 草の表示トグル。GrassLayer 内の「草」フォルダに置くとオフ時に
+    // フォルダごと消えて戻せなくなるため、マウント制御は Scene 側に置く
+    showGrass: { value: true, label: '草を表示' },
     grassPlacement: {
       value: 'terrain',
-      options: { '地形(DEM)': 'terrain', 'ステージ床': 'floor', 'なし': 'none' },
+      options: { '地形(DEM)': 'terrain', 'ステージ床': 'floor' },
       label: '草の配置',
     },
     // ポストFX（Bloom + Tilt-Shift + Film Grade）。GPU 負荷が高く TDR の
@@ -122,10 +125,10 @@ function SceneContent({ entityCount = 2000 }) {
       {/* 青いグリッドレイヤー */}
       <GridLayer position={[0, -1, 0]} />
 
-      {/* GPU インスタンス草（1 ドローコール）。leva で 地形(DEM) / ステージ床 を切替。
+      {/* GPU インスタンス草（1 ドローコール）。leva で表示トグル + 地形(DEM) / ステージ床 を切替。
           DEM 版は TerrainLayer の onHeightData（heightInfo）を待ってからマウントする */}
-      {grassPlacement === 'floor' && <GrassLayer area={40} position={[0, -1, 0]} />}
-      {grassPlacement === 'terrain' && heightInfo && (
+      {showGrass && grassPlacement === 'floor' && <GrassLayer area={40} position={[0, -1, 0]} />}
+      {showGrass && grassPlacement === 'terrain' && heightInfo && (
         <GrassLayer
           terrain
           seaLevel={region.seaLevel}
