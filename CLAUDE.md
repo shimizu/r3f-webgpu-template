@@ -69,10 +69,11 @@ CPU(受信・パック) → GPU(投影・補間) → Draw(インスタンス描�
 - `SkyLayer` — 室内・卓上トーンの空ドーム（静的グラデーション + fBM 雲。大気散乱モデルではない）
 - `StageLayer` / `GridLayer` — ジオラマ床（チェッカーボード／グリッド）
 - `MaterialSamplesLayer` — マテリアルサンプル球体の lookdev 基準（後述）
-- `WaterBoxLayer` / `WaterBlobLayer` / `WaterOceanLayer` — TSL による水面シミュレーション（Perlin/FBM ノイズ + 波・フレネル・深度カラーを GPU 計算）
+- `WaterBoxLayer` / `WaterBlobLayer` / `WaterOceanLayer` — TSL による水面シミュレーション（Perlin/FBM ノイズ + 波・フレネル・深度カラーを GPU 計算）。WaterOcean は `floodLevel`（水位上昇）と `murkiness`（濁り、uniform 駆動）で浸水表現に対応
 - `TerrainLayer` — GeoTIFF (DEM) ベースの 3D 地形メッシュ
 - `CloudLayer` — TSL raymarching による体積雲（cumulus / stratus / cirrus の3プリセット、範囲・coverage・厚みを props 指定）。GPU 負荷が高いので steps は控えめに（TDR 注意、既定構成は steps≈12）
-- `RainLayer` — GPU パーティクルの降雨（地形衝突あり）
+- `RainLayer` — GPU パーティクルの降雨（地形衝突あり）。`intensity` 0..1 で粒数・風の強さが uniform 駆動で変わる
+- `HeightFogLayer` — scene.fogNode に距離+高さの指数フォグを設定する非描画レイヤー（`src/tsl/heightFog.js`）。マウントしっぱなしで density を uniform 駆動（条件マウントは全マテリアル再コンパイルを招くので禁止）。自前の大気表現を持つレイヤー（空・雲）は `fog: false` で除外
 - `SnowLayer` — GPU パーティクルの降雪（RainLayer 派生。低速落下 + 強い横流され + 着地静止フェード。雪トグルで TerrainLayer の堆積も時定数駆動）
 - `GeojsonLayer` — GeoJSON ベクター地図描画
 - `MovingEntitiesLayer` — GPU 移動体（船舶・航空機）の補間描画

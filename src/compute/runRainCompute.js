@@ -65,6 +65,10 @@ const FALL_SPEED_MAX_RATIO = 1.3     // 落下速度の最大倍率
 const RESPAWN_WIND_CARRY = 0.5       // リスポーン時に風場の影響をどれだけ引き継ぐか
 const RESPAWN_VELOCITY_JITTER = 0.005 // リスポーン速度の微小ランダム幅
 
+// --- 雨量ゲート ---
+const PARKED_Y = -1000               // 非活性粒の退避先 Y（画面外）
+const INTENSITY_WIND_BASE = 0.5      // 雨量 0 のときの風・突風の強さ倍率（+雨量で 1.5 まで）
+
 // --- スプラッシュ ---
 const SPLASH = {
   maxLife: 0.4,              // スプラッシュの最大寿命（秒）
@@ -153,6 +157,9 @@ export function createRainComputeRunner({
   const rainSpeedNode = uniform(rainSpeed)
   const windXNode = uniform(wind[0])
   const windZNode = uniform(wind[2])
+  // 雨量 0..1。instanceIndex < intensity×count の粒だけ降らせる
+  // （バッファ再確保なし・再コンパイルなしで粒数が変わる）
+  const intensityNode = uniform(1)
 
   const turbScaleNode = uniform(WIND_FIELD.turbulenceScale)
   const turbStrengthNode = uniform(WIND_FIELD.turbulenceStrength)
@@ -214,11 +221,17 @@ export function createRainComputeRunner({
       groundY = float(0.0).toVar()
     }
 
+    // --- 雨量ゲート ---
+    // instanceIndex が intensity×count 未満の粒だけ「活性」。
+    // 非活性の粒は画面外（PARKED_Y）へ退避し、活性化されたら即リスポーンする
+    const active = float(instanceIndex).lessThan(intensityNode.mul(float(particleCount)))
+    const parked = currentPos.y.lessThan(float(PARKED_Y * 0.5))
+
     // --- 衝突判定 ---
-    const hitGround = nextPos.y.lessThanEqual(groundY)
+    const hitGround = nextPos.y.lessThanEqual(groundY).and(parked.not())
     const outX = nextPos.x.abs().greaterThan(halfWNode)
     const outZ = nextPos.z.abs().greaterThan(halfDNode)
-    const needsRespawn = hitGround.or(outX).or(outZ)
+    const needsRespawn = hitGround.or(outX).or(outZ).or(parked)
 
     // --- スプラッシュ発生 ---
     // 地面に衝突した場合のみスプラッシュを発生させる（エリア外脱出では発生しない）
@@ -242,21 +255,22 @@ export function createRainComputeRunner({
       sin(splashAngle).mul(splashRadius)
     )
 
-    // hitGround の時だけスプラッシュを初期化
+    // 活性粒が接地した時だけスプラッシュを初期化
     // 衝突点の位置を使い、Y は地表高さにスナップ
+    const splashSpawn = hitGround.and(active)
     const hitPos = vec3(nextPos.x, groundY, nextPos.z)
 
     splashPos.assign(vec3(
-      select(hitGround, hitPos.x, splashPos.x),
-      select(hitGround, hitPos.y, splashPos.y),
-      select(hitGround, hitPos.z, splashPos.z)
+      select(splashSpawn, hitPos.x, splashPos.x),
+      select(splashSpawn, hitPos.y, splashPos.y),
+      select(splashSpawn, hitPos.z, splashPos.z)
     ))
     splashVel.assign(vec3(
-      select(hitGround, newSplashVel.x, splashVel.x),
-      select(hitGround, newSplashVel.y, splashVel.y),
-      select(hitGround, newSplashVel.z, splashVel.z)
+      select(splashSpawn, newSplashVel.x, splashVel.x),
+      select(splashSpawn, newSplashVel.y, splashVel.y),
+      select(splashSpawn, newSplashVel.z, splashVel.z)
     ))
-    splashLife.assign(select(hitGround, float(SPLASH.maxLife), splashLife))
+    splashLife.assign(select(splashSpawn, float(SPLASH.maxLife), splashLife))
 
     // --- 雨粒リスポーン ---
     const respawnSeed = timeNode.mul(0.41).add(idPhase.mul(23.7)).toVar()
@@ -272,16 +286,27 @@ export function createRainComputeRunner({
       windZNode.add(windForce.z.mul(RESPAWN_WIND_CARRY)).add(cos(respawnSeed.mul(2.7)).mul(RESPAWN_VELOCITY_JITTER))
     ).toVar()
 
-    const finalPos = vec3(
+    // 非活性の粒は画面外へ退避（活性化されたら parked → needsRespawn で復帰）
+    const activePos = vec3(
       select(needsRespawn, respawnPos.x, nextPos.x),
       select(needsRespawn, respawnPos.y, nextPos.y),
       select(needsRespawn, respawnPos.z, nextPos.z)
+    )
+    const finalPos = vec3(
+      select(active, activePos.x, currentPos.x),
+      select(active, activePos.y, float(PARKED_Y)),
+      select(active, activePos.z, currentPos.z)
     ).toVar()
 
-    const finalVel = vec3(
+    const activeVel = vec3(
       select(needsRespawn, respawnVel.x, nextVel.x),
       select(needsRespawn, respawnVel.y, nextVel.y),
       select(needsRespawn, respawnVel.z, nextVel.z)
+    )
+    const finalVel = vec3(
+      select(active, activeVel.x, float(0)),
+      select(active, activeVel.y, float(0)),
+      select(active, activeVel.z, float(0))
     ).toVar()
 
     pos.assign(finalPos)
@@ -349,6 +374,16 @@ export function createRainComputeRunner({
       deltaNode.value = delta || DEFAULT_DELTA
       renderer.compute(rainComputeNode)
       renderer.compute(splashComputeNode)
+    },
+
+    // 雨量 0..1（uniform 駆動 = 再コンパイルなし）。粒数に加えて
+    // 乱流・突風の強さも雨量に連動させる
+    setIntensity(value) {
+      const v = Math.min(Math.max(value, 0), 1)
+      intensityNode.value = v
+      const windScale = INTENSITY_WIND_BASE + v
+      turbStrengthNode.value = WIND_FIELD.turbulenceStrength * windScale
+      gustStrengthNode.value = WIND_FIELD.gustStrength * windScale
     },
 
     destroy(renderer) {

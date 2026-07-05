@@ -56,6 +56,7 @@ function RainLayer({
   particleCount = 30000,
   rainSpeed = 0.08,
   wind = DEFAULT_WIND,
+  intensity = 1, // 雨量 0..1（uniform 駆動。粒数と風の強さが連動、再コンパイルなし）
 }) {
   const renderer = useThree((state) => state.gl)
   const systemRef = useRef(null)
@@ -188,6 +189,11 @@ function RainLayer({
       system,
     }
   }, [particleCount, width, depth, topY, rainSpeed, windX, windY, windZ, heightSampler])
+
+  // 雨量は uniform 駆動（resources 再生成なし）
+  useEffect(() => {
+    resources.system.setIntensity(intensity)
+  }, [resources, intensity])
 
   useEffect(() => {
     resources.system.init(renderer)
