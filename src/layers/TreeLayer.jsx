@@ -24,6 +24,8 @@ import {
 import { coverageMask } from '../tsl/coverageMask'
 import { createGroundField } from './groundField'
 import { useHeightField } from '../gis/HeightFieldContext'
+import { useLandCover } from '../gis/LandCoverContext'
+import { TREE_CLASSES } from '../gis/landcover'
 
 /**
  * GPU インスタンス樹木レイヤー（GrassLayer パターンの移植）。
@@ -234,6 +236,11 @@ export default function TreeLayer({
   const heightInfo = terrain ? ctxHeightInfo : null
   const sampler = terrain ? gpu?.sampler ?? null : null
 
+  // 土地被覆（LandCoverContext）。DEM モードでデータがあれば森林クラスにのみ散布する。
+  // region に landcoverUrl が無ければ classAtWorld=null で従来の無条件散布のまま
+  const { status: lcStatus, classAtWorld } = useLandCover()
+  const lcAccept = terrain ? classAtWorld : null
+
   const { geometry, material, uniforms } = useMemo(() => {
     // 散布域: DEM モードでは地形フットプリントに合わせる
     const areaX = heightInfo ? heightInfo.terrainWidth : area
@@ -247,9 +254,25 @@ export default function TreeLayer({
     const iVarArr = new Float32Array(maxCount * 4) // yaw, 高さ個体差, 幅個体差, 風位相
     const iMiscArr = new Float32Array(maxCount * 3) // 樹種乱数, 色個体差, スケール微差
     const rand = mulberry32(4649)
+    // 土地被覆 rejection: 森林クラス以外を引いたら座標を引き直す（クラス外に
+    // 絶対生えないハード制約。coverageMask は「クラス内の自然な疎密」として残る）。
+    // trees クラスは面積 5 割超なので期待試行数は 2 回弱。上限到達時は最後の候補を
+    // そのまま採用（GPU マスクは通らないが確率 ~1e-の世界なので実質不可視）。
+    // lcAccept が null のときは rand() の消費列が従来と完全一致する（bit 同一の配置）
+    const MAX_TRIES = 200
     for (let i = 0; i < maxCount; i += 1) {
-      iPosArr[i * 2] = (rand() - 0.5) * areaX
-      iPosArr[i * 2 + 1] = (rand() - 0.5) * areaZ
+      let x = (rand() - 0.5) * areaX
+      let z = (rand() - 0.5) * areaZ
+      if (lcAccept) {
+        let tries = 1
+        while (!TREE_CLASSES.includes(lcAccept(x, z)) && tries < MAX_TRIES) {
+          x = (rand() - 0.5) * areaX
+          z = (rand() - 0.5) * areaZ
+          tries += 1
+        }
+      }
+      iPosArr[i * 2] = x
+      iPosArr[i * 2 + 1] = z
       iVarArr[i * 4] = rand() * Math.PI * 2
       iVarArr[i * 4 + 1] = 0.65 + rand() * 0.7
       iVarArr[i * 4 + 2] = 0.75 + rand() * 0.5
@@ -402,7 +425,7 @@ export default function TreeLayer({
     geometry.instanceCount = Math.floor(maxCount * 0.15)
 
     return { geometry, material, uniforms }
-  }, [area, maxCount, heightInfo, sampler])
+  }, [area, maxCount, heightInfo, sampler, lcAccept])
 
   // 密度 = instanceCount の変更のみ（ジオメトリ再生成なし）
   useEffect(() => {
@@ -456,8 +479,9 @@ export default function TreeLayer({
     }
   }, [geometry, material])
 
-  // DEM モードで高さ場がまだ無い間は描画しない（hooks 実行後に判定）
-  if (terrain && (!heightInfo || !sampler)) return null
+  // DEM モードで高さ場がまだ無い間は描画しない（hooks 実行後に判定）。
+  // 土地被覆のロード中も待つ（先に無条件散布 → 到着後に再散布、の二度手間を防ぐ）
+  if (terrain && (!heightInfo || !sampler || lcStatus === 'loading')) return null
 
   return (
     <mesh

@@ -17,6 +17,7 @@ import WaterOceanLayer from './layers/WaterOceanLayer'
 import Coordinate from './gis/CoordinateContext'
 import { REGIONS, REGION_OPTIONS, regionFootprint } from './gis/regions'
 import { HeightFieldProvider, useHeightField } from './gis/HeightFieldContext'
+import { LandCoverProvider } from './gis/LandCoverContext'
 import { deriveLayerInputs } from './scenario/weather'
 import { useScenario } from './scenario/useScenario'
 // eslint-disable-next-line no-unused-vars
@@ -189,7 +190,10 @@ function SceneContent({ entityCount = 2000 }) {
   }, [regionId, setHeightInfo])
 
   return (
-    <>
+    // 土地被覆（region.landcoverUrl があれば Provider がロードして配布。
+    // 無い region は idle のまま従来動作）。regionId は SceneContent 内の
+    // leva 値なので、Scene() 側ではなくここでラップする
+    <LandCoverProvider url={region.landcoverUrl ?? null} view={region.view}>
       {/* 太陽光や環境光を一括管理するリグ */}
       <LightingRig />
 
@@ -249,6 +253,7 @@ function SceneContent({ entityCount = 2000 }) {
           smooth={region.terrain.smooth}
           heightScale={region.terrain.heightScale}
           baseHeight={region.terrain.baseHeight}
+          elevationStops={region.terrain.elevationStops}
           seaLevel={region.seaLevel}
           onHeightData={setHeightInfo}
           wetness={inputs.wetnessTarget}
@@ -378,7 +383,7 @@ function SceneContent({ entityCount = 2000 }) {
       {/* HTML ラベル（地名は地域プリセット由来） */}
       <Labels3DLayer labels={region.labels} />
 
-    </>
+    </LandCoverProvider>
   )
 }
 

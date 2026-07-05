@@ -77,6 +77,10 @@ Scene.jsx の切替構成（leva「草」フォルダの表示トグル + 配置
 - DEM 接地時は `bladeScale`（Scene では 0.4）で地形スケールに草丈を合わせる。等倍だと草が巨大になりやすい
 - 生育標高域（elevMin / elevMax）は DEM モードのみ有効。水没域を避けるには elevMin を上げる
 - 草配置は決定的（mulberry32, seed=1337）なのでリロードで同じ配置が再現される（lookdev の比較に有利）
+- `terrain=true` で region に土地被覆データ（LandCoverContext）があれば、散布時の
+  rejection sampling で草地系クラス（grass/crops/shrub）にのみ配置される。全インスタンスが
+  有効配置になるため density の意味（≒見える本数）が保たれる。ロード中はマウント保留。
+  データの無い region は従来の無条件散布と bit 同一
 - `maxCount` は初期化時のバッファサイズ。増やすと初期化コストとメモリが増える
 - uniform 駆動なので leva 操作で再コンパイルは走らない
 
