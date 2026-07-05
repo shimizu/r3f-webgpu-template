@@ -28,6 +28,7 @@ import SnowLayer from './layers/SnowLayer'
 import HeightFogLayer from './layers/HeightFogLayer'
 import LightningLayer from './layers/LightningLayer'
 import TornadoLayer from './layers/TornadoLayer'
+import FireLayer from './layers/FireLayer'
 import TerrainLayer from './layers/TerrainLayer'
 import CloudLayer from './layers/CloudLayer'
 import Labels3DLayer from './layers/Labels3DLayer'
@@ -285,6 +286,16 @@ function SceneContent({ entityCount = 2000 }) {
           position={[0, 0.5, 0]}
           topY={region.cloudHeight - 0.9}
           strength={inputs.tornadoStrength}
+        />
+      )}
+
+      {/* 山火事の炎 + 火の粉: TerrainLayer の延焼マスクと同じ発火点・半径で
+          燃焼前線リングに沿って燃える（uniform 駆動） */}
+      {inputs.fireActive && heightInfo && fireIgnition && (
+        <FireLayer
+          position={[0, 0.5, 0]}
+          ignition={fireIgnition}
+          radius={fireRadius}
         />
       )}
 
