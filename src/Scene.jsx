@@ -21,6 +21,7 @@ import GeojsonLayer from './layers/GeojsonLayer'
 // eslint-disable-next-line no-unused-vars
 import MovingEntitiesLayer from './layers/MovingEntitiesLayer'
 import RainLayer from './layers/RainLayer'
+import SnowLayer from './layers/SnowLayer'
 import TerrainLayer from './layers/TerrainLayer'
 import CloudLayer from './layers/CloudLayer'
 import Labels3DLayer from './layers/Labels3DLayer'
@@ -65,8 +66,9 @@ function SceneContent({ entityCount = 2000 }) {
     // リスクがあるため既定オフ（steps≈12 の雲と併用時は特に注意）
     postfx: { value: false, label: 'ポストFX' },
   })
-  const { rain, wetness, cloudType, cloudCoverage, cloudQuality } = useControls('天候', {
+  const { rain, snow, wetness, cloudType, cloudCoverage, cloudQuality } = useControls('天候', {
     rain: { value: false, label: '雨' },
+    snow: { value: false, label: '雪' },
     wetness: { value: 0, min: 0, max: 1, step: 0.01, label: '地面の濡れ（手動）' },
     cloudType: {
       value: 'stratus',
@@ -150,6 +152,7 @@ function SceneContent({ entityCount = 2000 }) {
           onHeightData={setHeightInfo}
           wetness={Math.max(wetness, rain ? 0.85 : 0)}
           snowAmount={snowAmount}
+          snowing={snow}
           snowLine={snowLine}
           snowAspect={snowAspect}
           snowColor={snowColor}
@@ -167,6 +170,18 @@ function SceneContent({ entityCount = 2000 }) {
           depth={heightInfo.terrainDepth}
           topY={6}
           particleCount={15000}
+        />
+      )}
+
+      {/* 降雪: 地形フットプリントに散布し、共有ハイトフィールドで着地静止 + フェード。
+          雪トグルは TerrainLayer の堆積（snowing）もゆっくり駆動する */}
+      {snow && heightInfo && (
+        <SnowLayer
+          position={[0, 0.5, 0]}
+          width={heightInfo.terrainWidth}
+          depth={heightInfo.terrainDepth}
+          topY={6}
+          particleCount={12000}
         />
       )}
 
