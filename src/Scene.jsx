@@ -22,6 +22,7 @@ import GeojsonLayer from './layers/GeojsonLayer'
 import MovingEntitiesLayer from './layers/MovingEntitiesLayer'
 import RainLayer from './layers/RainLayer'
 import SnowLayer from './layers/SnowLayer'
+import HeightFogLayer from './layers/HeightFogLayer'
 import TerrainLayer from './layers/TerrainLayer'
 import CloudLayer from './layers/CloudLayer'
 import Labels3DLayer from './layers/Labels3DLayer'
@@ -68,9 +69,22 @@ function SceneContent({ entityCount = 2000 }) {
       label: '配置',
     },
   })
-  const { rain, snow, wetness, cloudType, cloudCoverage, cloudQuality } = useControls('天候', {
+  const {
+    rain,
+    rainIntensity,
+    snow,
+    fogAmount,
+    floodLevel,
+    wetness,
+    cloudType,
+    cloudCoverage,
+    cloudQuality,
+  } = useControls('天候', {
     rain: { value: false, label: '雨' },
+    rainIntensity: { value: 0.6, min: 0, max: 1, step: 0.01, label: '雨量' },
     snow: { value: false, label: '雪' },
+    fogAmount: { value: 0, min: 0, max: 1, step: 0.01, label: '霧（手動）' },
+    floodLevel: { value: 0, min: 0, max: 0.6, step: 0.005, label: '浸水（水位上昇）' },
     wetness: { value: 0, min: 0, max: 1, step: 0.01, label: '地面の濡れ（手動）' },
     cloudType: {
       value: 'stratus',
@@ -118,6 +132,14 @@ function SceneContent({ entityCount = 2000 }) {
       {/* 室内・卓上トーンの空ドーム（静的グラデーション + fBM 雲） */}
       <SkyLayer />
 
+      {/* 高さフォグ（scene.fogNode）。マウントしっぱなしで density を uniform 駆動
+          （条件マウントにすると全マテリアル再コンパイルが走る）。
+          雨天時は雨量に応じて視程が自動で下がる */}
+      <HeightFogLayer
+        density={Math.max(fogAmount, rain ? rainIntensity * 0.35 : 0)}
+        baseY={0.5}
+      />
+
       {/* 地図閲覧に適したカメラ操作（左ドラッグで移動、右ドラッグで回転） */}
       <MapControls
         enableDamping
@@ -152,7 +174,7 @@ function SceneContent({ entityCount = 2000 }) {
           baseHeight={region.terrain.baseHeight}
           seaLevel={region.seaLevel}
           onHeightData={setHeightInfo}
-          wetness={Math.max(wetness, rain ? 0.85 : 0)}
+          wetness={Math.max(wetness, rain ? rainIntensity * 0.9 : 0, floodLevel > 0.02 ? 0.9 : 0)}
           snowAmount={snowAmount}
           snowing={snow}
           snowLine={snowLine}
@@ -172,6 +194,7 @@ function SceneContent({ entityCount = 2000 }) {
           depth={heightInfo.terrainDepth}
           topY={6}
           particleCount={15000}
+          intensity={rainIntensity}
         />
       )}
 
@@ -187,7 +210,8 @@ function SceneContent({ entityCount = 2000 }) {
         />
       )}
 
-      {/* 海面レイヤー（投影後の地形フットプリントに合わせる） */}
+      {/* 海面レイヤー（投影後の地形フットプリントに合わせる）。
+          浸水スライダーで水位が上がり、水位に応じて泥水に濁る */}
       {showOcean && (
         <WaterOceanLayer
           width={footprint.width}
@@ -195,6 +219,8 @@ function SceneContent({ entityCount = 2000 }) {
           depth={1}
           opacity={0.85}
           position={[0, 0.5, 0]}
+          floodLevel={floodLevel}
+          murkiness={Math.min(1, floodLevel * 2.5 + (rain ? rainIntensity * 0.25 : 0))}
         />
       )}
 

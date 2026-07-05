@@ -4,6 +4,7 @@ import { TextureLoader, RepeatWrapping, FrontSide } from 'three'
 import { MeshPhysicalNodeMaterial } from 'three/webgpu'
 import {
   cameraPosition,
+  clamp,
   color,
   float,
   mix,
@@ -15,6 +16,7 @@ import {
   smoothstep,
   texture,
   time,
+  uniform,
   uv,
   vec2,
   vec3,
@@ -31,6 +33,14 @@ const MATERIAL = {
   clearcoat: 0.08,
   clearcoatRoughness: 0.08,
   envMapIntensity: 0.5,
+}
+
+// --- 濁り（浸水・増水時の泥水表現。murk uniform 0..1 で駆動） ---
+const MURK = {
+  color: '#6f5c3d',        // 泥水の色
+  colorMix: 0.65,          // murk=1 のときの色の混ざり具合
+  opacityBoost: 0.18,      // murk=1 のときの不透明度の押し上げ
+  attenuationColor: '#2e2416', // murk=1 のときの光吸収色（濁って早く暗くなる）
 }
 
 // --- カラー ---
@@ -116,7 +126,8 @@ const OCEAN_OPACITY = {
 
 const BOX_GEOMETRY_ARGS = [2, 1, 2, 1, 1, 1]
 
-function createWaterBoxMaterial(waterNormalsTexture, opacity) {
+// murk は 0..1 の uniform ノード（濁り。浸水・増水と連動して泥水に寄せる）
+function createWaterBoxMaterial(waterNormalsTexture, opacity, murk) {
   const material = new MeshPhysicalNodeMaterial({
     transparent: true,
     transmission: MATERIAL.transmission * opacity,
@@ -231,16 +242,31 @@ function createWaterBoxMaterial(waterNormalsTexture, opacity) {
   const reflectivity = fresnel.mul(EFFECTS.fresnelStrength).mul(topMask)
   material.colorNode = mix(material.colorNode, color(COLORS.reflection), reflectivity)
 
+  // --- 濁り（浸水・増水の泥水。murk uniform 駆動で再コンパイルなし） ---
+  material.colorNode = mix(
+    material.colorNode,
+    color(MURK.color),
+    murk.mul(MURK.colorMix)
+  )
+
   // --- 透過度 ---
   const topOpacity = mix(float(OCEAN_OPACITY.topMin), float(OCEAN_OPACITY.topMax), fresnel)
   const sideOpacity = mix(float(OCEAN_OPACITY.sideMin), float(OCEAN_OPACITY.sideMax), depthFactor)
-  material.opacityNode = mix(sideOpacity, topOpacity, topMask).mul(float(opacity))
+  material.opacityNode = clamp(
+    mix(sideOpacity, topOpacity, topMask).mul(float(opacity)).add(murk.mul(MURK.opacityBoost)),
+    0,
+    1
+  )
 
   // --- 光吸収カラー ---
   material.attenuationColorNode = mix(
-    color(COLORS.attenuationDeep),
-    color(COLORS.attenuationShallow),
-    depthFactor.mul(SURFACE.attenuationMix)
+    mix(
+      color(COLORS.attenuationDeep),
+      color(COLORS.attenuationShallow),
+      depthFactor.mul(SURFACE.attenuationMix)
+    ),
+    color(MURK.attenuationColor),
+    murk
   )
 
   return material
@@ -252,6 +278,8 @@ function WaterOceanLayer({
   depth = 2,
   opacity = 1.0,
   position = [0, 0, 0],
+  floodLevel = 0, // 水位上昇（world units）。地形は不動なので上げるだけで海岸線が内陸へ食い込む
+  murkiness = 0, // 濁り 0..1（uniform 駆動。増水時の泥水表現）
 }) {
   const waterNormals = useLoader(TextureLoader, './textures/waternormals.jpg')
 
@@ -260,17 +288,23 @@ function WaterOceanLayer({
     waterNormals.wrapT = RepeatWrapping
   }, [waterNormals])
 
+  const murkUniform = useMemo(() => uniform(0), [])
+
   const material = useMemo(
-    () => createWaterBoxMaterial(waterNormals, opacity),
-    [waterNormals, opacity]
+    () => createWaterBoxMaterial(waterNormals, opacity, murkUniform),
+    [waterNormals, opacity, murkUniform]
   )
+
+  useEffect(() => {
+    murkUniform.value = Math.min(Math.max(murkiness, 0), 1)
+  }, [murkUniform, murkiness])
 
   useEffect(() => {
     return () => material.dispose()
   }, [material])
 
   return (
-    <group position={position}>
+    <group position={[position[0], position[1] + floodLevel, position[2]]}>
       <mesh
         castShadow
         receiveShadow
