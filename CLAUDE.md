@@ -46,7 +46,7 @@ CPU(受信・パック) → GPU(投影・補間) → Draw(インスタンス描�
 - `StudioEnvironment.jsx` — RoomEnvironment による IBL（PMREM 生成）
 - `LightingRig.jsx` — ambient / hemisphere / directional（シャドウ付き）/ spot のスタジオ照明セット
 
-**レイヤーのトグル運用**: `Scene.jsx` では多くのレイヤー import が `// eslint-disable-next-line no-unused-vars` 付きでコメント的に保持されている。これは lookdev 中に有効化・無効化を切り替えるための運用パターンなので、未使用 import を安易に削除しないこと。アクティブなレイヤー構成は頻繁に入れ替わるため、現状は `Scene.jsx` の JSX を直接確認する。ランタイムのパラメータトグルには leva（`useControls`）を使う。`backup_Scene.jsx` は過去の構成のスナップショット。
+**レイヤーのトグル運用**: `Scene.jsx` では多くのレイヤー import が `// eslint-disable-next-line no-unused-vars` 付きでコメント的に保持されている。これは lookdev 中に有効化・無効化を切り替えるための運用パターンなので、未使用 import を安易に削除しないこと。アクティブなレイヤー構成は頻繁に入れ替わるため、現状は `Scene.jsx` の JSX を直接確認する。ランタイムのパラメータトグルには leva（`useControls`）を使う。
 
 ### 投影コンテキスト（`src/gis/`）
 
@@ -91,7 +91,6 @@ WebGPU ネイティブの後処理パイプライン:
 - `createInterpolationPass.js` — GIS エンティティの補間 + 投影コンピュートパス（MovingEntitiesLayer が使用）。日付変更線をまたぐ最短経路補間に対応
 - `runRainCompute.js` — 降雨パーティクルの物理・風場（FBM）・地形衝突
 - `disposeStorageAttributes.js` — compute 専用 StorageBufferAttribute の GPU バッファ解放ヘルパー。各パスの `destroy(renderer)` から呼ぶ（新パスを作る場合も必ず組み込むこと）
-- `createProjectionPass.js` / `runBarsCompute.js` — 補間パスに置換済み・未使用（退役候補）
 - `observationLayout.js` — 観測データレイアウト定義。`OBSERVATION_STRIDE = 12` floats/エンティティ: lon, lat, alt, timestamp, prevLon, prevLat, prevAlt, prevTimestamp, speed, heading, type, status
 - `src/data/mockObservations.js` — 開発用のモック観測データ（`region` オプションで生成域を限定可能）
 
@@ -127,4 +126,5 @@ WebGPU ネイティブの後処理パイプライン:
 - `docs/projection-formulas.md` — 投影図法の数式リファレンス（projectionCPU/GPU の実装根拠）
 - `AGENTS.md` — リポジトリガイドライン（コミット規約、PR要件等）
 - `GEMINI.md` — プロジェクトコンセプトと技術スタックの概観
-- `plan.md` / `task.md` / `refactoring.md` — 開発フェーズと進行中タスク
+- `plan.md` — 災害ジオラマ可視化基盤への育成ロードマップ（リファクタリング + 災害別アプローチ + 実装順序）
+- `refactoring.md` — リファクタリング候補の記録
