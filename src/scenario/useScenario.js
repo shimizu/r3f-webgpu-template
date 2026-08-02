@@ -21,10 +21,11 @@ import { SCENARIOS, SCENARIO_OPTIONS, sampleScenario } from './scenarios'
 const UPDATE_INTERVAL = 0.25 // 秒。weather state と進行スライダーの更新間隔
 
 export function useScenario() {
-  const [{ scenarioId, playing, progress }, set] = useControls('シナリオ', () => ({
+  const [{ scenarioId, playing, progress, speed }, set] = useControls('シナリオ', () => ({
     scenarioId: { value: 'none', options: SCENARIO_OPTIONS, label: 'シナリオ' },
     playing: { value: false, label: '再生' },
     progress: { value: 0, min: 0, max: 1, step: 0.001, label: '進行' },
+    speed: { value: 1, min: 0.25, max: 8, step: 0.25, label: '再生速度' },
   }))
 
   const [weather, setWeather] = useState(null)
@@ -51,7 +52,8 @@ export function useScenario() {
     if (!scenario) return
 
     if (playing) {
-      tRef.current = Math.min(1, tRef.current + delta / scenario.duration)
+      // 再生速度は倍率（duration は基準値として温存）。scenarios.js は非破壊
+      tRef.current = Math.min(1, tRef.current + (delta * speed) / scenario.duration)
       if (tRef.current >= 1) set({ playing: false }) // 終端で自動停止
     }
 
